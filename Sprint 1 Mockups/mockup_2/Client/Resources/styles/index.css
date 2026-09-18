@@ -1,0 +1,275 @@
+/* Valent Partners - Mockup 2: Customer Behavior & Reviewer Dashboard
+   Custom rules only supplement Bootstrap; layout/grid/spacing relies on Bootstrap utilities.
+   Data-mark colors (sequential ramp, status palette) follow the validated dataviz reference
+   palette so chart color is never reused for unrelated brand chrome. */
+
+:root {
+    /* Brand chrome (UI only - never used for data marks) */
+    --valent-crimson: #9e1b32;
+    --valent-crimson-dark: #7a1526;
+    --valent-crimson-light: #fbeaed;
+
+    /* Text tokens */
+    --ink-primary: #0b0b0b;
+    --ink-secondary: #52514e;
+    --ink-muted: #898781;
+    --gridline: #e1e0d9;
+
+    /* Sequential ramp (blue, one hue, light -> dark) for funnel magnitude */
+    --seq-250: #86b6ef;
+    --seq-350: #5598e7;
+    --seq-450: #2a78d6;
+    --seq-550: #1c5cab;
+    --seq-650: #104281;
+
+    /* Status palette (fixed - reserved for state, never themed) */
+    --status-good: #0ca30c;
+    --status-warning: #b8790f; /* deepened from #fab219 for text/badge contrast */
+    --status-serious: #c85a34; /* deepened from #ec835a for text/badge contrast */
+    --status-critical: #d03b3b;
+}
+
+body {
+    background-color: #f7f5f6;
+    color: var(--ink-primary);
+}
+
+/* Prototype banner */
+.prototype-banner {
+    background-color: #fff3cd;
+    color: #664d03;
+    border-bottom: 1px solid #ffe69c;
+    letter-spacing: 0.02em;
+}
+
+/* Navbar */
+.valent-navbar {
+    background-color: var(--valent-crimson);
+}
+
+/* Buttons */
+.valent-btn-primary {
+    background-color: var(--valent-crimson);
+    border-color: var(--valent-crimson);
+    color: #fff;
+}
+.valent-btn-primary:hover,
+.valent-btn-primary:focus {
+    background-color: var(--valent-crimson-dark);
+    border-color: var(--valent-crimson-dark);
+    color: #fff;
+}
+.valent-btn-primary:disabled {
+    background-color: #c98a95;
+    border-color: #c98a95;
+}
+
+.valent-btn-outline {
+    background-color: transparent;
+    border: 1px solid var(--valent-crimson);
+    color: var(--valent-crimson);
+}
+.valent-btn-outline:hover,
+.valent-btn-outline:focus {
+    background-color: var(--valent-crimson-light);
+    color: var(--valent-crimson-dark);
+    border-color: var(--valent-crimson-dark);
+}
+
+/* Filters bar */
+.filters-bar {
+    background-color: #fff;
+    border: 1px solid #e9ecef;
+    border-radius: 0.75rem;
+}
+
+.drilldown-note {
+    background-color: var(--valent-crimson-light);
+    border: 1px solid #f1c4cc;
+    color: var(--valent-crimson-dark);
+}
+
+.section-heading {
+    font-weight: 700;
+    color: var(--ink-primary);
+}
+
+/* Mock data badge */
+.mock-badge {
+    background-color: #6c757d;
+    color: #fff;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    font-size: 0.68rem;
+    padding: 0.35em 0.6em;
+}
+
+/* ---------------- KPI stat tiles ---------------- */
+.kpi-tile {
+    background-color: #fff;
+    border: 1px solid #e9ecef;
+    border-radius: 0.75rem;
+    padding: 1rem 1.1rem;
+    height: 100%;
+}
+.kpi-tile .kpi-label {
+    font-size: 0.78rem;
+    color: var(--ink-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.kpi-tile .kpi-value {
+    font-size: 1.85rem;
+    font-weight: 600;
+    color: var(--ink-primary);
+    line-height: 1.15;
+}
+.kpi-tile .kpi-caption {
+    font-size: 0.75rem;
+    color: var(--ink-muted);
+}
+
+/* ---------------- Funnel ---------------- */
+.funnel-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.4rem 0;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    width: 100%;
+    text-align: left;
+}
+.funnel-row:hover .funnel-track {
+    box-shadow: 0 0 0 2px var(--seq-250) inset;
+}
+.funnel-label-col {
+    width: 190px;
+    flex-shrink: 0;
+    font-size: 0.85rem;
+    color: var(--ink-primary);
+    font-weight: 600;
+}
+.funnel-label-col .funnel-sub {
+    font-weight: 400;
+    color: var(--ink-muted);
+    font-size: 0.72rem;
+    display: block;
+}
+.funnel-track {
+    flex-grow: 1;
+    background-color: var(--gridline);
+    border-radius: 4px;
+    height: 24px;
+    position: relative;
+    overflow: hidden;
+}
+.funnel-fill {
+    background-color: var(--seq-450);
+    height: 100%;
+    border-radius: 4px 0 0 4px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 2px;
+    transition: width 0.2s ease;
+}
+.funnel-fill.attention {
+    background-color: var(--status-critical);
+}
+.funnel-value-col {
+    width: 132px;
+    flex-shrink: 0;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.82rem;
+}
+.funnel-value-col .funnel-users {
+    font-weight: 700;
+    color: var(--ink-primary);
+    display: block;
+}
+.funnel-value-col .funnel-continue {
+    color: var(--ink-secondary);
+    font-size: 0.74rem;
+}
+.funnel-attention-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--status-critical);
+}
+
+/* ---------------- Friction table ---------------- */
+.friction-table th {
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--ink-secondary);
+    border-bottom-width: 2px;
+}
+.friction-table td {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.86rem;
+}
+.friction-table tbody tr {
+    cursor: pointer;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.74rem;
+    font-weight: 700;
+    padding: 0.28em 0.6em;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.status-pill.status-good {
+    color: var(--status-good);
+    background-color: rgba(12, 163, 12, 0.1);
+}
+.status-pill.status-warning {
+    color: var(--status-warning);
+    background-color: rgba(184, 121, 15, 0.12);
+}
+.status-pill.status-critical {
+    color: var(--status-critical);
+    background-color: rgba(208, 59, 59, 0.1);
+}
+
+/* ---------------- Reviewer queue ---------------- */
+#queueTable tbody tr {
+    cursor: pointer;
+}
+.queue-status-pill {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.28em 0.6em;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.queue-status-pending { background-color: #fff3cd; color: #664d03; }
+.queue-status-escalated { background-color: rgba(208, 59, 59, 0.1); color: var(--status-critical); }
+.queue-status-approved { background-color: rgba(12, 163, 12, 0.1); color: var(--status-good); }
+.queue-status-denied { background-color: #e9ecef; color: var(--ink-secondary); }
+
+/* ---------------- Modal metric clarification callout ---------------- */
+.metric-clarification {
+    background-color: #eef4fb;
+    border: 1px solid #cfe0f3;
+    color: #1c3a5c;
+}
+
+.accordion-button:not(.collapsed) {
+    background-color: var(--valent-crimson-light);
+    color: var(--valent-crimson-dark);
+}
+.accordion-button:focus {
+    box-shadow: 0 0 0 0.2rem rgba(158, 27, 50, 0.2);
+}

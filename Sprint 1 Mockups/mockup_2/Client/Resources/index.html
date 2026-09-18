@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Valent Partners | Behavior &amp; Reviewer Dashboard (Prototype)</title>
+    <meta name="description" content="Valent Partners mockup 2: customer behavior analytics and reviewer dashboard prototype.">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Bootstrap 5 via CDN (no jQuery dependency required for this version) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="styles/index.css">
+</head>
+<body>
+
+    <!-- Prototype / Demonstration banner -->
+    <div class="prototype-banner text-center py-1 small">
+        PROTOTYPE / DEMONSTRATION &mdash; Every number on this page is DEMONSTRATION DATA / NOT REAL CUSTOMER ANALYTICS. No real applicants, carrier rules, or PII are represented.
+    </div>
+
+    <!-- Top navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark valent-navbar">
+        <div class="container-fluid px-3 px-lg-4">
+            <a class="navbar-brand fw-bold mb-0" href="#">Valent&nbsp;Partners</a>
+            <span class="navbar-text text-white-50 d-none d-md-inline">Behavior &amp; Reviewer Dashboard &mdash; Mockup 2</span>
+        </div>
+    </nav>
+
+    <main class="container-fluid px-3 px-lg-4 pb-5">
+
+        <!-- ============ FILTERS ============ -->
+        <section class="filters-bar shadow-sm my-3 p-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-6 col-md-3">
+                    <label for="filterState" class="form-label fw-semibold small mb-1">State</label>
+                    <select class="form-select form-select-sm" id="filterState"></select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label for="filterLine" class="form-label fw-semibold small mb-1">Insurance Line</label>
+                    <select class="form-select form-select-sm" id="filterLine">
+                        <option value="all">All Lines</option>
+                        <option value="homeowners">Homeowners</option>
+                        <option value="flood">Flood</option>
+                        <option value="jewelry">Jewelry</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label for="filterRange" class="form-label fw-semibold small mb-1">Date Range</label>
+                    <select class="form-select form-select-sm" id="filterRange">
+                        <option value="last7">Last 7 days</option>
+                        <option value="last30" selected>Last 30 days</option>
+                        <option value="last90">Last 90 days</option>
+                        <option value="ytd">Year to date</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <button type="button" class="btn valent-btn-outline btn-sm w-100" id="resetFiltersBtn">Reset Filters</button>
+                </div>
+            </div>
+            <p class="small text-muted mb-0 mt-2" id="filterSummary"></p>
+        </section>
+
+        <div class="alert drilldown-note small mb-3">
+            <strong>State / insurance drill-down:</strong> changing the filters above updates every section below using demonstration datasets for a handful of example states. A higher exit rate for a state does not by itself prove that state's rules caused the behavior &mdash; it is a starting point for investigation, not a conclusion.
+        </div>
+
+        <!-- ============ KPI OVERVIEW ============ -->
+        <section class="mb-4">
+            <h2 class="h5 section-heading">KPI Overview</h2>
+            <div class="row g-3" id="kpiRow"></div>
+        </section>
+
+        <!-- ============ APPLICATION FUNNEL ============ -->
+        <section class="mb-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-1">
+                        <h2 class="h5 section-heading mb-0">Application Funnel</h2>
+                        <span class="text-muted small">Click a stage for detail</span>
+                    </div>
+                    <p class="text-muted small mb-3">Users reaching each step, with continuation / drop-off between steps. The step with the highest friction is flagged automatically.</p>
+                    <div id="funnelContainer"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ FRICTION METRICS ============ -->
+        <section class="mb-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h2 class="h5 section-heading">Confusion / Friction Metrics</h2>
+
+                    <div class="alert metric-clarification small">
+                        <strong>Important metric clarification:</strong> "dwell time," "hover time," "focus time," and "hesitation" are different signals that require different instrumentation. The values below represent an average <em>page/step dwell time</em> concept only. Exact production definitions and thresholds (e.g., what counts as a "quick exit") must still be agreed with the client &mdash; nothing here is final.
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle friction-table bg-white mb-0" id="frictionTable">
+                            <thead>
+                                <tr>
+                                    <th>Step</th>
+                                    <th>Avg Dwell Time</th>
+                                    <th>Exit Rate</th>
+                                    <th>Quick-Exit Rate</th>
+                                    <th>Drop-off</th>
+                                    <th>Validation Errors</th>
+                                    <th>Repeat Interactions</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="frictionTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ REVIEWER / APPLICATION QUEUE PREVIEW ============ -->
+        <section class="mb-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-1">
+                        <h2 class="h5 section-heading mb-0">Reviewer / Application Queue Preview</h2>
+                        <span class="badge mock-badge">ROLES &amp; PERMISSIONS: UNRESOLVED REQUIREMENT</span>
+                    </div>
+                    <p class="text-muted small mb-3">Lightweight concept only &mdash; no real authentication, roles, or underwriting decisions. Click a row for a mock detail panel.</p>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle bg-white mb-0" id="queueTable">
+                            <thead>
+                                <tr>
+                                    <th>Application ID</th>
+                                    <th>Insurance Line</th>
+                                    <th>State</th>
+                                    <th>Status</th>
+                                    <th>Reason for Review</th>
+                                    <th>Submitted</th>
+                                </tr>
+                            </thead>
+                            <tbody id="queueTableBody"></tbody>
+                        </table>
+                    </div>
+                    <p class="small text-muted mb-0 mt-2" id="queueEmptyMsg"></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ ASSUMPTIONS / OPEN QUESTIONS ============ -->
+        <section class="mb-5">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h2 class="h5 section-heading">Assumptions, Metric Definitions &amp; Open Questions</h2>
+                    <p class="text-muted small">Required end-of-build output for client review. Nothing in this section is a finalized business rule.</p>
+                    <div class="accordion" id="assumptionsAccordion">
+
+                        <div class="accordion-item">
+                            <h3 class="accordion-header">
+                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#accMetrics">Metric Definitions Used in This Prototype</button>
+                            </h3>
+                            <div id="accMetrics" class="accordion-collapse collapse show" data-bs-parent="#assumptionsAccordion">
+                                <div class="accordion-body small">
+                                    <ul class="mb-0">
+                                        <li><strong>Sessions started</strong> &mdash; mock count of users entering the funnel at Landing.</li>
+                                        <li><strong>Completion rate</strong> &mdash; mock % of sessions reaching Completion.</li>
+                                        <li><strong>Abandonment rate</strong> &mdash; 100% minus completion rate.</li>
+                                        <li><strong>Avg. session time</strong> &mdash; sum of mock average dwell time across steps; not a measured production metric yet.</li>
+                                        <li><strong>Quick-exit rate</strong> &mdash; illustrative average of per-step "left very soon after arriving" rates.</li>
+                                        <li><strong>Dwell time</strong> &mdash; illustrative average time on a step; distinct from hover/focus time (see clarification banner above).</li>
+                                        <li><strong>Validation-error rate</strong> &mdash; illustrative % of step visits that triggered a form validation error.</li>
+                                        <li><strong>Needs Attention</strong> &mdash; a mock composite of exit rate, quick-exit rate, and validation-error rate, flagged only to demonstrate the concept.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h3 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#accThresholds">Mock Thresholds Used</button>
+                            </h3>
+                            <div id="accThresholds" class="accordion-collapse collapse" data-bs-parent="#assumptionsAccordion">
+                                <div class="accordion-body small">
+                                    <ul class="mb-0">
+                                        <li>"Needs Attention" is shown above an illustrative friction-score threshold in this prototype only.</li>
+                                        <li>No specific "quick exit" time boundary (e.g., "&lt; 10 seconds") is asserted as final &mdash; a placeholder concept only.</li>
+                                        <li>State and insurance-line multipliers used to vary mock data were invented for demonstration purposes and are not based on real Valent Partners or carrier data.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h3 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#accUnresolved">Unresolved Dashboard Requirements</button>
+                            </h3>
+                            <div id="accUnresolved" class="accordion-collapse collapse" data-bs-parent="#assumptionsAccordion">
+                                <div class="accordion-body small">
+                                    <ul class="mb-0">
+                                        <li>Exact production event names, timestamps, and metric formulas.</li>
+                                        <li>Which metrics belong on the landing dashboard vs. deeper drill-down pages.</li>
+                                        <li>Employee vs. admin role permissions for reviewer access.</li>
+                                        <li>Retention, privacy, and consent requirements for behavioral tracking.</li>
+                                        <li>Which applicant-level details a reviewer should be able to open from aggregate analytics.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h3 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#accQuestions">Questions for the Next Client Review</button>
+                            </h3>
+                            <div id="accQuestions" class="accordion-collapse collapse" data-bs-parent="#assumptionsAccordion">
+                                <div class="accordion-body small">
+                                    <ul class="mb-0">
+                                        <li>When you say "hover" or "how long users stay," do you mean page time, field-focus time, actual mouse-hover duration, or something else?</li>
+                                        <li>What should count as leaving "quickly" &mdash; a fixed number of seconds, leaving before interacting, or something else?</li>
+                                        <li>Which application steps are most important to monitor closely?</li>
+                                        <li>Do you want friction metrics compared by state and insurance type?</li>
+                                        <li>What should happen operationally when the dashboard reveals a problem?</li>
+                                        <li>Who should have access to aggregate analytics vs. individual application details?</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="text-center text-muted small py-4 border-top">
+        Valent Partners &mdash; Sprint 1 Mockup 2 &mdash; Prototype for internal review only. No real analytics pipeline, database, or reviewer authentication is implemented.
+    </footer>
+
+    <!-- Step detail modal (funnel + friction table) -->
+    <div class="modal fade" id="stepDetailModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="stepDetailModalLabel">Step Detail</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="stepDetailModalBody"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn valent-btn-outline" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application detail modal (reviewer queue) -->
+    <div class="modal fade" id="appDetailModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="appDetailModalLabel">Application Detail</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="appDetailModalBody"></div>
+                <div class="modal-footer">
+                    <span class="small text-muted me-auto">Prototype only &mdash; actions below are non-functional.</span>
+                    <button type="button" class="btn valent-btn-outline btn-sm" disabled>Request Info</button>
+                    <button type="button" class="btn valent-btn-outline btn-sm" disabled>Escalate</button>
+                    <button type="button" class="btn valent-btn-primary btn-sm" disabled>Approve</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 bundle (includes Popper) via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="scripts/index.js"></script>
+</body>
+</html>
