@@ -33,6 +33,7 @@
             <li class="step-item" data-step="2"><span class="step-num">2</span><span class="step-label">Explore</span></li>
             <li class="step-item" data-step="3"><span class="step-num">3</span><span class="step-label">Compare</span></li>
             <li class="step-item" data-step="4"><span class="step-num">4</span><span class="step-label">Next Step</span></li>
+            <li class="step-item" data-step="5"><span class="step-num">5</span><span class="step-label">Apply</span></li>
         </ol>
     </div>
 
@@ -93,28 +94,12 @@
             </div>
         </section>
 
-        <!-- ============ SCREEN 2b: Flood/Jewelry future-state placeholder ============ -->
-        <section id="screen-future" class="app-screen d-none">
-            <div class="text-center py-5">
-                <div class="type-icon display-4 mb-3" id="futureIcon">&#128274;</div>
-                <h2 class="fw-bold" id="futureTitle">Coming Soon to This Prototype</h2>
-                <p class="lead text-muted mx-auto" style="max-width: 640px;" id="futureBody">
-                    This insurance line is a core part of Valent Partners' scope, but the deep interactive flow for it hasn't been built in this first prototype. Mockup 1 focuses on validating the Homeowners journey first.
-                </p>
-                <span class="badge mock-badge mb-4">FUTURE PROTOTYPE FEATURE</span>
-                <div>
-                    <button type="button" class="btn valent-btn-outline" id="futureBackBtn">&larr; Back to Selection</button>
-                    <button type="button" class="btn valent-btn-primary ms-2" id="futureTryHomeownersBtn">Try the Homeowners Demo Instead</button>
-                </div>
-            </div>
-        </section>
-
-        <!-- ============ SCREEN 2: Homeowners Coverage Explorer ============ -->
+        <!-- ============ SCREEN 2: Coverage Explorer (Homeowners / Flood / Jewelry) ============ -->
         <section id="screen-explorer" class="app-screen d-none">
             <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
                 <div>
-                    <h2 class="fw-bold mb-1">Homeowners Coverage Components</h2>
-                    <p class="text-muted mb-0">These are parts of a single homeowners policy, not competing plans &mdash; explore each one below.</p>
+                    <h2 class="fw-bold mb-1" id="explorerTitle">Homeowners Coverage Components</h2>
+                    <p class="text-muted mb-0" id="explorerSubtitle">These are parts of a single homeowners policy, not competing plans &mdash; explore each one below.</p>
                 </div>
                 <button type="button" class="btn valent-btn-outline btn-sm" id="explorerBackBtn">&larr; Change Selection</button>
             </div>
@@ -123,18 +108,7 @@
 
             <div class="row g-3" id="coverageCardGrid"></div>
 
-            <div class="row g-3 mt-1">
-                <div class="col-12 col-md-6">
-                    <div class="alert alert-warning mb-0">
-                        <strong>Good to know:</strong> Flood damage is generally <u>not</u> covered by a standard homeowners policy. Separate flood coverage is typically required.
-                    </div>
-                </div>
-                <div class="col-12 col-md-6">
-                    <div class="alert alert-warning mb-0">
-                        <strong>Good to know:</strong> Valuable jewelry often has special coverage limits under homeowners policies and may need scheduled or separate coverage.
-                    </div>
-                </div>
-            </div>
+            <div class="row g-3 mt-1" id="explorerNotesRow"></div>
 
             <div class="compare-bar shadow-lg" id="compareBar">
                 <div class="container d-flex align-items-center justify-content-between py-2">
@@ -178,8 +152,8 @@
                     <div class="card h-100 text-center p-3 next-step-card">
                         <div class="type-icon mb-2">&#128196;</div>
                         <h3 class="h5">Start Application</h3>
-                        <p class="text-muted small">Begin a guided, multi-step application for the coverage you explored.</p>
-                        <button type="button" class="btn valent-btn-primary mt-auto future-cta" data-feature="Start Application">Start Application</button>
+                        <p class="text-muted small">Begin a guided application for the coverage you explored.</p>
+                        <button type="button" class="btn valent-btn-primary mt-auto" id="startApplicationBtn">Start Application</button>
                     </div>
                 </div>
                 <div class="col-12 col-md-4">
@@ -202,6 +176,81 @@
 
             <div class="text-center mt-5">
                 <button type="button" class="btn valent-btn-outline" id="startOverBtn">Start Over</button>
+            </div>
+        </section>
+
+        <!-- ============ SCREEN 5: Application (baseline functional, front-end only) ============ -->
+        <section id="screen-apply" class="app-screen d-none">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                    <h2 class="fw-bold mb-1">Start Your Application</h2>
+                    <p class="text-muted mb-0" id="applyContextLine"></p>
+                </div>
+                <button type="button" class="btn valent-btn-outline btn-sm" id="applyBackBtn">&larr; Back to Next Steps</button>
+            </div>
+
+            <div class="alert state-mock-banner mb-4">
+                <span class="badge mock-badge me-2">MOCK / PROTOTYPE</span>
+                This is a baseline front-end demo only. Nothing is transmitted, stored, or reviewed by Valent Partners, and no real application is created.
+            </div>
+
+            <div id="applyFormWrap">
+                <form id="applicationForm" class="row g-3" novalidate>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="applicantName">Full Name</label>
+                        <input type="text" class="form-control" id="applicantName" required>
+                        <div class="invalid-feedback">Please enter your full name.</div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="applicantEmail">Email</label>
+                        <input type="email" class="form-control" id="applicantEmail" required>
+                        <div class="invalid-feedback">Please enter a valid email address.</div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="applicantPhone">Phone</label>
+                        <input type="tel" class="form-control" id="applicantPhone" required>
+                        <div class="invalid-feedback">Please enter a phone number.</div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="applicantState">State</label>
+                        <select class="form-select" id="applicantState" required></select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="applicantAddress">Street Address</label>
+                        <input type="text" class="form-control" id="applicantAddress" required>
+                        <div class="invalid-feedback">Please enter a street address.</div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="applicantCity">City</label>
+                        <input type="text" class="form-control" id="applicantCity" required>
+                        <div class="invalid-feedback">Please enter a city.</div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="applicantZip">ZIP Code</label>
+                        <input type="text" class="form-control" id="applicantZip" pattern="[0-9]{5}" placeholder="12345" required>
+                        <div class="invalid-feedback">Please enter a 5-digit ZIP code.</div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="applicantNotes">Anything else we should know? <span class="text-muted">(optional)</span></label>
+                        <textarea class="form-control" id="applicantNotes" rows="2"></textarea>
+                    </div>
+                    <div class="col-12 text-end">
+                        <button type="submit" class="btn valent-btn-primary btn-lg" id="submitApplicationBtn">Submit Application (Mock)</button>
+                    </div>
+                </form>
+            </div>
+
+            <div id="applyConfirmation" class="d-none text-center py-5">
+                <div class="type-icon display-4 mb-3">&#9989;</div>
+                <h3 class="fw-bold">Mock Application Received</h3>
+                <p class="text-muted mx-auto" style="max-width: 560px;">
+                    This confirms the front-end flow only &mdash; <span id="applyConfirmSummary"></span> In production this would be validated, securely stored, and routed for underwriting review.
+                </p>
+                <p class="small text-muted">Mock Reference #: <strong id="mockReferenceNumber"></strong></p>
+                <div>
+                    <button type="button" class="btn valent-btn-outline" id="applyStartOverBtn">Start Over</button>
+                    <button type="button" class="btn valent-btn-primary ms-2" id="applyBackToNextBtn">Back to Next Steps</button>
+                </div>
             </div>
         </section>
 
