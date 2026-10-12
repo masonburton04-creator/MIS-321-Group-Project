@@ -4,10 +4,22 @@
    palette so chart color is never reused for unrelated brand chrome. */
 
 :root {
-    /* Brand chrome (UI only - never used for data marks) */
-    --valent-crimson: #9e1b32;
-    --valent-crimson-dark: #7a1526;
-    --valent-crimson-light: #fbeaed;
+    /* Brand chrome (UI only - never used for data marks). These defaults are the
+       original crimson look; the Crimson Professional scheme in themes.css overrides
+       them via <html data-theme="crimson-pro">. */
+    --brand-primary: #9e1b32;
+    --brand-primary-dark: #7a1526;
+    --brand-primary-light: #fbeaed;
+    /* Informational callouts are blue so they never read as errors (red = error only) */
+    --info-bg: #e8eef5;
+    --info-border: #c3d1e0;
+    --info-text: #243b53;
+    --brand-primary-soft: #c98a95;   /* disabled buttons */
+    --brand-primary-border: #f1c4cc; /* borders on tinted callouts */
+    --brand-focus-ring: rgba(158, 27, 50, 0.2);
+    --brand-accent: #9e1b32;
+    --brand-bg: #f7f5f6;
+    --brand-text: #0b0b0b;
 
     /* Text tokens */
     --ink-primary: #0b0b0b;
@@ -30,8 +42,8 @@
 }
 
 body {
-    background-color: #f7f5f6;
-    color: var(--ink-primary);
+    background-color: var(--brand-bg);
+    color: var(--brand-text);
 }
 
 /* Prototype banner */
@@ -42,38 +54,39 @@ body {
     letter-spacing: 0.02em;
 }
 
-/* Navbar */
+/* Navbar (inset stripe shows the accent color; invisible when accent = primary) */
 .valent-navbar {
-    background-color: var(--valent-crimson);
+    background-color: var(--brand-primary);
+    box-shadow: inset 0 -4px 0 var(--brand-accent);
 }
 
 /* Buttons */
 .valent-btn-primary {
-    background-color: var(--valent-crimson);
-    border-color: var(--valent-crimson);
+    background-color: var(--brand-primary);
+    border-color: var(--brand-primary);
     color: #fff;
 }
 .valent-btn-primary:hover,
 .valent-btn-primary:focus {
-    background-color: var(--valent-crimson-dark);
-    border-color: var(--valent-crimson-dark);
+    background-color: var(--brand-primary-dark);
+    border-color: var(--brand-primary-dark);
     color: #fff;
 }
 .valent-btn-primary:disabled {
-    background-color: #c98a95;
-    border-color: #c98a95;
+    background-color: var(--brand-primary-soft);
+    border-color: var(--brand-primary-soft);
 }
 
 .valent-btn-outline {
     background-color: transparent;
-    border: 1px solid var(--valent-crimson);
-    color: var(--valent-crimson);
+    border: 1px solid var(--brand-primary);
+    color: var(--brand-primary);
 }
 .valent-btn-outline:hover,
 .valent-btn-outline:focus {
-    background-color: var(--valent-crimson-light);
-    color: var(--valent-crimson-dark);
-    border-color: var(--valent-crimson-dark);
+    background-color: var(--brand-primary-light);
+    color: var(--brand-primary-dark);
+    border-color: var(--brand-primary-dark);
 }
 
 /* Filters bar */
@@ -84,9 +97,9 @@ body {
 }
 
 .drilldown-note {
-    background-color: var(--valent-crimson-light);
-    border: 1px solid #f1c4cc;
-    color: var(--valent-crimson-dark);
+    background-color: var(--info-bg);
+    border: 1px solid var(--info-border);
+    color: var(--info-text);
 }
 
 .section-heading {
@@ -258,6 +271,25 @@ body {
 .queue-status-escalated { background-color: rgba(208, 59, 59, 0.1); color: var(--status-critical); }
 .queue-status-approved { background-color: rgba(12, 163, 12, 0.1); color: var(--status-good); }
 .queue-status-denied { background-color: #e9ecef; color: var(--ink-secondary); }
+.queue-status-new { background-color: #e0ecfa; color: #1c4f8a; }
+
+/* ---------------- Agent picker + application detail ---------------- */
+.acting-as-select {
+    min-width: 12rem;
+}
+.detail-heading {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--brand-primary);
+    border-bottom: 1px solid #dee2e6;
+    padding-bottom: 0.25rem;
+    margin-bottom: 0.5rem;
+}
+.history-list li {
+    padding: 0.2rem 0;
+}
 
 /* ---------------- Modal metric clarification callout ---------------- */
 .metric-clarification {
@@ -267,9 +299,18 @@ body {
 }
 
 .accordion-button:not(.collapsed) {
-    background-color: var(--valent-crimson-light);
-    color: var(--valent-crimson-dark);
+    background-color: var(--brand-primary-light);
+    color: var(--brand-primary-dark);
 }
 .accordion-button:focus {
-    box-shadow: 0 0 0 0.2rem rgba(158, 27, 50, 0.2);
+    box-shadow: 0 0 0 0.2rem var(--brand-focus-ring);
+}
+
+/* Bundle tag in the reviewer queue */
+.bundle-badge {
+    background-color: var(--brand-accent);
+    color: #fff;
+    font-size: 0.65rem;
+    letter-spacing: 0.03em;
+    vertical-align: middle;
 }

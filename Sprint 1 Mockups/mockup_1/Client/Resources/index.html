@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="crimson-pro">
 <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -10,6 +10,7 @@
     <!-- Bootstrap 5 via CDN (no jQuery dependency required for this version) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="styles/index.css">
+    <link rel="stylesheet" href="styles/themes.css">
 </head>
 <body>
 
@@ -26,27 +27,73 @@
         </div>
     </nav>
 
-    <!-- Step progress indicator -->
-    <div class="container">
+    <!-- Step progress indicator (hidden during the application, which has its own) -->
+    <div class="container" id="stepIndicatorWrap">
         <ol class="step-indicator d-flex list-unstyled justify-content-between my-4" id="stepIndicator">
-            <li class="step-item active" data-step="1"><span class="step-num">1</span><span class="step-label">Select</span></li>
-            <li class="step-item" data-step="2"><span class="step-num">2</span><span class="step-label">Explore</span></li>
-            <li class="step-item" data-step="3"><span class="step-num">3</span><span class="step-label">Compare</span></li>
-            <li class="step-item" data-step="4"><span class="step-num">4</span><span class="step-label">Next Step</span></li>
+            <li class="step-item active" data-step="1"><span class="step-num">1</span><span class="step-label">Get Started</span></li>
+            <li class="step-item" data-step="2"><span class="step-num">2</span><span class="step-label">Select</span></li>
+            <li class="step-item" data-step="3"><span class="step-num">3</span><span class="step-label">Explore</span></li>
+            <li class="step-item" data-step="4"><span class="step-num">4</span><span class="step-label">Compare</span></li>
         </ol>
     </div>
 
     <main class="container pb-5">
 
-        <!-- ============ SCREEN 1: Insurance + State Selection ============ -->
-        <section id="screen-select" class="app-screen">
+        <!-- ============ SCREEN 1: Get Started (landing) ============ -->
+        <section id="screen-start" class="app-screen">
             <div class="text-center mb-4">
                 <h1 class="fw-bold">Find the Right Coverage, Faster</h1>
-                <p class="lead text-muted">Choose an insurance line and your state to start exploring coverage that fits your needs.</p>
+                <p class="lead text-muted mb-0">Homeowners, Flood, Jewelry, and Auto insurance &mdash; how would you like to get started?</p>
+            </div>
+
+            <div class="row g-3 justify-content-center">
+                <div class="col-12 col-md-6 col-lg-3">
+                    <div class="card h-100 text-center p-3 next-step-card">
+                        <div class="type-icon mb-2">&#128196;</div>
+                        <h2 class="h5">Start Application</h2>
+                        <p class="text-muted small">Apply for one type of coverage, or bundle several into a single application.</p>
+                        <button type="button" class="btn valent-btn-primary mt-auto" id="startApplicationBtn">Start Application</button>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <div class="card h-100 text-center p-3 next-step-card">
+                        <div class="type-icon mb-2">&#128269;</div>
+                        <h2 class="h5">Explore &amp; Compare Coverage</h2>
+                        <p class="text-muted small">Learn what each part of a policy covers and compare options side by side.</p>
+                        <button type="button" class="btn valent-btn-primary mt-auto" id="startExploreBtn">Explore Coverage</button>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <div class="card h-100 text-center p-3 next-step-card">
+                        <div class="type-icon mb-2">&#129302;</div>
+                        <h2 class="h5">Ask the AI Quote Assistant</h2>
+                        <p class="text-muted small">Chat through your details to work toward an estimate, with human escalation when needed.</p>
+                        <button type="button" class="btn valent-btn-primary mt-auto future-cta" data-feature="AI Quote Assistant">Ask Quote Assistant</button>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <div class="card h-100 text-center p-3 next-step-card">
+                        <div class="type-icon mb-2">&#128222;</div>
+                        <h2 class="h5">Talk to an Agent</h2>
+                        <p class="text-muted small">Complex situations get routed to a real Valent Partners specialist.</p>
+                        <button type="button" class="btn valent-btn-primary mt-auto future-cta" data-feature="Talk to an Agent">Talk to an Agent</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ SCREEN 2: Insurance + State Selection ============ -->
+        <section id="screen-select" class="app-screen d-none">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+                <div>
+                    <h2 class="fw-bold mb-1">Choose Your Coverage and State</h2>
+                    <p class="text-muted mb-0" id="selectSubtitle">Select an insurance line and your state to continue.</p>
+                </div>
+                <button type="button" class="btn valent-btn-outline btn-sm" id="selectBackBtn">&larr; Back</button>
             </div>
 
             <div class="row g-3 justify-content-center mb-4" id="insuranceTypeCards">
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-6 col-lg-3">
                     <button type="button" class="insurance-type-card card h-100 w-100 text-start" data-type="homeowners">
                         <div class="card-body">
                             <div class="type-icon mb-2">&#127968;</div>
@@ -55,7 +102,7 @@
                         </div>
                     </button>
                 </div>
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-6 col-lg-3">
                     <button type="button" class="insurance-type-card card h-100 w-100 text-start" data-type="flood">
                         <div class="card-body">
                             <div class="type-icon mb-2">&#127754;</div>
@@ -64,7 +111,7 @@
                         </div>
                     </button>
                 </div>
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-6 col-lg-3">
                     <button type="button" class="insurance-type-card card h-100 w-100 text-start" data-type="jewelry">
                         <div class="card-body">
                             <div class="type-icon mb-2">&#128142;</div>
@@ -72,6 +119,21 @@
                             <p class="card-text text-muted small mb-0">Specialized protection for valuable or hard-to-replace items.</p>
                         </div>
                     </button>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <button type="button" class="insurance-type-card card h-100 w-100 text-start" data-type="auto">
+                        <div class="card-body">
+                            <div class="type-icon mb-2">&#128663;</div>
+                            <h2 class="h5 card-title mb-1">Auto</h2>
+                            <p class="card-text text-muted small mb-0">Coverage for your vehicles, liability on the road, and your drivers.</p>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            <div class="row justify-content-center">
+                <div class="col-12 col-md-8">
+                    <div class="alert state-mock-banner text-center d-none" id="bundleNote" role="status"></div>
                 </div>
             </div>
 
@@ -93,7 +155,7 @@
             </div>
         </section>
 
-        <!-- ============ SCREEN 2b: Flood/Jewelry future-state placeholder ============ -->
+        <!-- ============ SCREEN 3b: Flood/Jewelry/Auto future-state placeholder ============ -->
         <section id="screen-future" class="app-screen d-none">
             <div class="text-center py-5">
                 <div class="type-icon display-4 mb-3" id="futureIcon">&#128274;</div>
@@ -109,7 +171,7 @@
             </div>
         </section>
 
-        <!-- ============ SCREEN 2: Homeowners Coverage Explorer ============ -->
+        <!-- ============ SCREEN 3: Homeowners Coverage Explorer ============ -->
         <section id="screen-explorer" class="app-screen d-none">
             <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
                 <div>
@@ -144,7 +206,7 @@
             </div>
         </section>
 
-        <!-- ============ SCREEN 3: Comparison ============ -->
+        <!-- ============ SCREEN 4: Comparison ============ -->
         <section id="screen-compare" class="app-screen d-none">
             <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
                 <div>
@@ -161,48 +223,422 @@
                 </table>
             </div>
 
-            <div class="text-end mt-3">
-                <button type="button" class="btn valent-btn-primary btn-lg" id="goToNextStepBtn">Continue to Next Steps &rarr;</button>
+            <div class="d-flex flex-wrap justify-content-end gap-2 mt-3">
+                <button type="button" class="btn valent-btn-outline btn-lg" id="startOverBtn">Start Over</button>
+                <button type="button" class="btn valent-btn-primary btn-lg" id="compareApplyBtn">Start Application &rarr;</button>
             </div>
         </section>
 
-        <!-- ============ SCREEN 4: Next Step ============ -->
-        <section id="screen-next" class="app-screen d-none">
-            <div class="text-center mb-4">
-                <h2 class="fw-bold">You've Explored Your Coverage &mdash; What's Next?</h2>
-                <p class="lead text-muted">Here's how this would connect to the full Valent Partners experience.</p>
-            </div>
+        <!-- ============ APPLICATION: 5-step form, saved to the API after each step ============ -->
+        <section id="screen-apply" class="app-screen d-none">
+            <ol class="step-indicator d-flex list-unstyled justify-content-between my-4" id="appStepIndicator">
+                <li class="step-item active" data-step="1"><span class="step-num">1</span><span class="step-label">Coverage</span></li>
+                <li class="step-item" data-step="2"><span class="step-num">2</span><span class="step-label">Details</span></li>
+                <li class="step-item" data-step="3"><span class="step-num">3</span><span class="step-label">Applicant</span></li>
+                <li class="step-item" data-step="4"><span class="step-num">4</span><span class="step-label">Quote</span></li>
+                <li class="step-item" data-step="5"><span class="step-num">5</span><span class="step-label">Submit</span></li>
+            </ol>
 
-            <div class="row g-3 justify-content-center">
-                <div class="col-12 col-md-4">
-                    <div class="card h-100 text-center p-3 next-step-card">
-                        <div class="type-icon mb-2">&#128196;</div>
-                        <h3 class="h5">Start Application</h3>
-                        <p class="text-muted small">Begin a guided, multi-step application for the coverage you explored.</p>
-                        <button type="button" class="btn valent-btn-primary mt-auto future-cta" data-feature="Start Application">Start Application</button>
-                    </div>
-                </div>
-                <div class="col-12 col-md-4">
-                    <div class="card h-100 text-center p-3 next-step-card">
-                        <div class="type-icon mb-2">&#129302;</div>
-                        <h3 class="h5">Ask the AI Quote Assistant</h3>
-                        <p class="text-muted small">Chat through your details to work toward an estimate, with human escalation when needed.</p>
-                        <button type="button" class="btn valent-btn-primary mt-auto future-cta" data-feature="AI Quote Assistant">Ask Quote Assistant</button>
-                    </div>
-                </div>
-                <div class="col-12 col-md-4">
-                    <div class="card h-100 text-center p-3 next-step-card">
-                        <div class="type-icon mb-2">&#128222;</div>
-                        <h3 class="h5">Talk to an Agent</h3>
-                        <p class="text-muted small">Complex situations get routed to a real Valent Partners specialist.</p>
-                        <button type="button" class="btn valent-btn-primary mt-auto future-cta" data-feature="Talk to an Agent">Talk to an Agent</button>
-                    </div>
-                </div>
-            </div>
+            <div class="row justify-content-center">
+                <div class="col-12 col-lg-8">
+                    <div class="card shadow-sm p-3 p-md-4">
+                        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                            <div>
+                                <h2 class="fw-bold mb-1" id="appTitle">Application</h2>
+                                <p class="text-muted mb-0" id="appSubtitle"></p>
+                            </div>
+                            <span class="badge mock-badge" id="appIdBadge"></span>
+                        </div>
 
-            <div class="text-center mt-5">
-                <button type="button" class="btn valent-btn-outline" id="startOverBtn">Start Over</button>
+                        <div class="alert alert-danger d-none" id="appError" role="alert"></div>
+
+                        <!-- STEP 1: Coverage -->
+                        <form class="app-step" data-step="1" novalidate>
+                            <h3 class="h5 mb-3">Coverage</h3>
+                            <div class="mb-3">
+                                <label for="startDate" class="form-label">When would you like coverage to start?</label>
+                                <input type="date" class="form-control" id="startDate" name="start_date" required>
+                                <div class="invalid-feedback">Choose a start date of today or later.</div>
+                                <div class="form-text d-none" id="floodWaitNote">
+                                    Flood policies through the National Flood Insurance Program (NFIP) generally have a
+                                    30-day waiting period before coverage begins, with some exceptions (for example, when
+                                    buying a home). Your specialist will confirm your actual start date.
+                                </div>
+                            </div>
+
+                            <fieldset class="mb-3" data-lines="homeowners">
+                                <legend class="form-label fs-6">Which coverage components are you interested in?</legend>
+                                <div class="form-text mt-0 mb-2">Pre-checked from your comparison, if you made one. You can change these later with an agent.</div>
+                                <div class="row row-cols-1 row-cols-sm-2 g-1" id="coverageCheckboxes"></div>
+                            </fieldset>
+
+                            <!-- data-hide-with: not asked when Homeowners is in the same bundle -->
+                            <fieldset class="mb-3" data-lines="flood" data-hide-with="homeowners">
+                                <legend class="form-label fs-6">Do you currently have a homeowners policy for this property?</legend>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="has_homeowners_policy" id="hasHoYes" value="yes" required>
+                                    <label class="form-check-label" for="hasHoYes">Yes</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="has_homeowners_policy" id="hasHoNo" value="no" required>
+                                    <label class="form-check-label" for="hasHoNo">No</label>
+                                </div>
+                            </fieldset>
+
+                            <fieldset class="mb-3" data-lines="auto">
+                                <legend class="form-label fs-6">Do you currently have auto insurance?</legend>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="currently_insured_auto" id="autoInsYes" value="yes" required>
+                                    <label class="form-check-label" for="autoInsYes">Yes</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="currently_insured_auto" id="autoInsNo" value="no" required>
+                                    <label class="form-check-label" for="autoInsNo">No</label>
+                                </div>
+                            </fieldset>
+                        </form>
+
+                        <!-- STEP 2: Property / Item / Vehicle Details (sections shown per insurance line) -->
+                        <form class="app-step d-none" data-step="2" novalidate>
+                            <fieldset data-lines="homeowners flood">
+                                <h3 class="h5 mb-3">Property Details</h3>
+                                <div class="mb-3">
+                                    <label for="street" class="form-label">Street address</label>
+                                    <input type="text" class="form-control" id="street" name="street" required maxlength="200" autocomplete="street-address">
+                                    <div class="invalid-feedback">Enter the property's street address.</div>
+                                </div>
+                                <div class="row g-3 mb-3">
+                                    <div class="col-12 col-md-7">
+                                        <label for="city" class="form-label">City</label>
+                                        <input type="text" class="form-control" id="city" name="city" required maxlength="100">
+                                        <div class="invalid-feedback">Enter a city.</div>
+                                    </div>
+                                    <div class="col-12 col-md-5">
+                                        <label for="zip" class="form-label">ZIP code</label>
+                                        <input type="text" class="form-control" id="zip" name="zip" required pattern="\d{5}" inputmode="numeric" maxlength="5" autocomplete="postal-code">
+                                        <div class="invalid-feedback">Enter a 5-digit ZIP code.</div>
+                                    </div>
+                                </div>
+                                <div class="row g-3 mb-3">
+                                    <div class="col-12 col-md-4">
+                                        <label for="homeType" class="form-label">Home type</label>
+                                        <select class="form-select" id="homeType" name="home_type" required>
+                                            <option value="">Choose...</option>
+                                            <option value="single_family">Single-family house</option>
+                                            <option value="townhouse">Townhouse</option>
+                                            <option value="condo">Condo</option>
+                                            <option value="mobile">Mobile / manufactured</option>
+                                        </select>
+                                        <div class="invalid-feedback">Choose a home type.</div>
+                                    </div>
+                                    <div class="col-6 col-md-4">
+                                        <label for="yearBuilt" class="form-label">Year built</label>
+                                        <input type="number" class="form-control" id="yearBuilt" name="year_built" required min="1800">
+                                        <div class="invalid-feedback">Enter a valid year.</div>
+                                    </div>
+                                    <div class="col-6 col-md-4">
+                                        <label for="squareFeet" class="form-label">Square feet</label>
+                                        <input type="number" class="form-control" id="squareFeet" name="square_feet" required min="100" max="50000">
+                                        <div class="invalid-feedback">Enter the home's size.</div>
+                                    </div>
+                                </div>
+                            </fieldset>
+
+                            <fieldset data-lines="flood">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-12 col-md-6">
+                                        <label for="floodZone" class="form-label">Flood zone (if known)</label>
+                                        <select class="form-select" id="floodZone" name="flood_zone" required>
+                                            <option value="unknown">I don't know</option>
+                                            <option value="A">Zone A / AE (high risk)</option>
+                                            <option value="V">Zone V / VE (coastal high risk)</option>
+                                            <option value="X">Zone X (moderate/low risk)</option>
+                                        </select>
+                                        <div class="form-text">Not sure? That's fine &mdash; a specialist can look it up.</div>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <span class="form-label d-block">Does the home have a basement?</span>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input" type="radio" name="has_basement" id="basementYes" value="yes" required>
+                                            <label class="form-check-label" for="basementYes">Yes</label>
+                                        </div>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input" type="radio" name="has_basement" id="basementNo" value="no" required>
+                                            <label class="form-check-label" for="basementNo">No</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </fieldset>
+
+                            <!-- Repeatable lists: the cards inside are built from the <template>s at the
+                                 bottom of this section (see "REPEATABLE ITEMS" in index.js) -->
+                            <fieldset data-lines="jewelry">
+                                <h3 class="h5 mb-1">Jewelry Details</h3>
+                                <p class="form-text mt-0 mb-3">Add each piece you'd like to insure.</p>
+                                <div class="repeat-list" data-item-type="jewelry"></div>
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                                    <button type="button" class="btn valent-btn-outline btn-sm repeat-add" data-item-type="jewelry">+ Add another item</button>
+                                    <span class="small text-muted" id="jewelryTotal"></span>
+                                </div>
+                            </fieldset>
+
+                            <fieldset data-lines="auto">
+                                <h3 class="h5 mb-1">Vehicles</h3>
+                                <p class="form-text mt-0 mb-3">Add each vehicle you'd like to insure.</p>
+                                <div class="repeat-list" data-item-type="vehicle"></div>
+                                <button type="button" class="btn valent-btn-outline btn-sm repeat-add mb-4" data-item-type="vehicle">+ Add another vehicle</button>
+
+                                <h3 class="h5 mb-1">Drivers</h3>
+                                <p class="form-text mt-0 mb-3">List everyone in your household who will drive these vehicles, including you.</p>
+                                <div class="repeat-list" data-item-type="driver"></div>
+                                <button type="button" class="btn valent-btn-outline btn-sm repeat-add mb-4" data-item-type="driver">+ Add another driver</button>
+
+                                <div class="mb-3">
+                                    <span class="form-label d-block">Any recent accidents, claims, or moving violations for any driver?</span>
+                                    <div class="form-text mt-0 mb-1">Your specialist will confirm the time period your insurance company looks back on.</div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="recent_incidents" id="incidentsYes" value="yes" required>
+                                        <label class="form-check-label" for="incidentsYes">Yes</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="recent_incidents" id="incidentsNo" value="no" required>
+                                        <label class="form-check-label" for="incidentsNo">No</label>
+                                    </div>
+                                </div>
+                            </fieldset>
+                        </form>
+
+                        <!-- STEP 3: Applicant Details -->
+                        <form class="app-step d-none" data-step="3" novalidate>
+                            <h3 class="h5 mb-3">Applicant Details</h3>
+                            <div class="row g-3 mb-3">
+                                <div class="col-12 col-md-6">
+                                    <label for="firstName" class="form-label">First name</label>
+                                    <input type="text" class="form-control" id="firstName" name="first_name" required maxlength="100" autocomplete="given-name">
+                                    <div class="invalid-feedback">Enter your first name.</div>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label for="lastName" class="form-label">Last name</label>
+                                    <input type="text" class="form-control" id="lastName" name="last_name" required maxlength="100" autocomplete="family-name">
+                                    <div class="invalid-feedback">Enter your last name.</div>
+                                </div>
+                            </div>
+                            <div class="row g-3 mb-3">
+                                <div class="col-12 col-md-6">
+                                    <label for="email" class="form-label">Email</label>
+                                    <input type="email" class="form-control" id="email" name="email" required maxlength="255" autocomplete="email">
+                                    <div class="invalid-feedback">Enter a valid email address.</div>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label for="phone" class="form-label">Phone <span class="text-muted">(optional)</span></label>
+                                    <input type="tel" class="form-control" id="phone" name="phone" pattern="[0-9()+\-. ]{7,20}" maxlength="20" autocomplete="tel">
+                                    <div class="invalid-feedback">Enter a valid phone number.</div>
+                                </div>
+                            </div>
+                        </form>
+
+                        <!-- STEP 4: Quote -->
+                        <form class="app-step d-none" data-step="4" novalidate>
+                            <h3 class="h5 mb-3">Your Quote</h3>
+                            <div class="alert alert-success d-none" id="appBundleNote">
+                                <strong>Bundle:</strong> <span id="appBundleLines"></span>.
+                                Bundling may qualify you for a multi-policy discount &mdash; your specialist will confirm.
+                            </div>
+                            <div class="alert state-mock-banner">
+                                <span class="badge mock-badge me-2">ESTIMATE PENDING</span>
+                                Automated estimates aren't available yet &mdash; Valent Partners' rating rules haven't been finalized.
+                                After you submit, a licensed specialist will review your application and follow up with a quote.
+                            </div>
+                            <h4 class="h6 mt-4">Review your answers</h4>
+                            <dl class="row small mb-0" id="appReview"></dl>
+                        </form>
+
+                        <!-- STEP 5: Submit -->
+                        <form class="app-step d-none" data-step="5" novalidate>
+                            <h3 class="h5 mb-3">Submit Your Application</h3>
+                            <p>Your application will go to a Valent Partners specialist for review. Submitting does not bind coverage or guarantee approval.</p>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="confirmAccurate" required>
+                                <label class="form-check-label" for="confirmAccurate">I confirm the information I provided is accurate to the best of my knowledge.</label>
+                                <div class="invalid-feedback">Please confirm before submitting.</div>
+                            </div>
+                        </form>
+
+                        <!-- Shown after a successful submit -->
+                        <div class="text-center py-4 d-none" id="appDone">
+                            <div class="type-icon display-4 mb-3">&#9989;</div>
+                            <h3 class="fw-bold">Application Submitted</h3>
+                            <p class="lead mb-1">Your application number is <strong id="appDoneId"></strong>.</p>
+                            <p class="text-muted">A Valent Partners specialist will review it and contact you at <span id="appDoneEmail"></span>.</p>
+                            <button type="button" class="btn valent-btn-primary mt-2" id="appDoneHomeBtn">Back to Home</button>
+                        </div>
+
+                        <div class="d-flex justify-content-between gap-2 mt-4" id="appNav">
+                            <button type="button" class="btn valent-btn-outline" id="appBackBtn">&larr; Back</button>
+                            <button type="button" class="btn valent-btn-primary" id="appNextBtn">Next &rarr;</button>
+                        </div>
+                    </div>
+                </div>
             </div>
+            <!-- ===== Templates for repeatable items (copied by index.js; fields use data-field, not name) ===== -->
+            <template id="tpl-vehicle">
+                <div class="repeat-item card p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h4 class="h6 mb-0 repeat-item-title"></h4>
+                        <button type="button" class="btn btn-sm valent-btn-outline repeat-remove">Remove</button>
+                    </div>
+                    <div class="row g-3 mb-2">
+                        <div class="col-4 col-md-3">
+                            <label class="form-label" data-for="year">Year</label>
+                            <input type="number" class="form-control" data-field="year" required min="1950">
+                            <div class="invalid-feedback">Enter a valid year.</div>
+                        </div>
+                        <div class="col-8 col-md-4">
+                            <label class="form-label" data-for="make">Make</label>
+                            <input type="text" class="form-control" data-field="make" required maxlength="50" placeholder="e.g. Toyota">
+                            <div class="invalid-feedback">Enter the make.</div>
+                        </div>
+                        <div class="col-12 col-md-5">
+                            <label class="form-label" data-for="model">Model</label>
+                            <input type="text" class="form-control" data-field="model" required maxlength="50" placeholder="e.g. Camry">
+                            <div class="invalid-feedback">Enter the model.</div>
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-2">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label" data-for="use">Primary use</label>
+                            <select class="form-select" data-field="use" required>
+                                <option value="">Choose...</option>
+                                <option value="commute">Commuting to work/school</option>
+                                <option value="pleasure">Personal / errands</option>
+                                <option value="business">Business</option>
+                                <option value="rideshare">Rideshare / delivery</option>
+                            </select>
+                            <div class="invalid-feedback">Choose how it's used.</div>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <label class="form-label" data-for="annual_mileage">Miles per year</label>
+                            <input type="number" class="form-control" data-field="annual_mileage" required min="0" max="200000" placeholder="e.g. 12000">
+                            <div class="invalid-feedback">Enter an estimate.</div>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <label class="form-label" data-for="garaging_zip">ZIP where it's parked</label>
+                            <input type="text" class="form-control garaging-zip" data-field="garaging_zip" required pattern="\d{5}" inputmode="numeric" maxlength="5">
+                            <div class="invalid-feedback">Enter a 5-digit ZIP code.</div>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label" data-for="ownership">Owned, financed, or leased?</label>
+                            <select class="form-select" data-field="ownership" required>
+                                <option value="">Choose...</option>
+                                <option value="owned">Owned outright</option>
+                                <option value="financed">Financed (loan)</option>
+                                <option value="leased">Leased</option>
+                            </select>
+                            <div class="invalid-feedback">Choose one.</div>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-end">
+                            <div class="form-text lender-note d-none">Lenders and leasing companies usually require collision and comprehensive coverage. Your specialist will confirm what's required.</div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <template id="tpl-driver">
+                <div class="repeat-item card p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h4 class="h6 mb-0 repeat-item-title"></h4>
+                        <button type="button" class="btn btn-sm valent-btn-outline repeat-remove">Remove</button>
+                    </div>
+                    <div class="row g-3 mb-2">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label" data-for="first_name">First name</label>
+                            <input type="text" class="form-control" data-field="first_name" required maxlength="100">
+                            <div class="invalid-feedback">Enter a first name.</div>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label" data-for="last_name">Last name</label>
+                            <input type="text" class="form-control" data-field="last_name" required maxlength="100">
+                            <div class="invalid-feedback">Enter a last name.</div>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label" data-for="relationship">Relationship to you</label>
+                            <select class="form-select" data-field="relationship" required>
+                                <option value="">Choose...</option>
+                                <option value="self">This is me</option>
+                                <option value="spouse">Spouse / partner</option>
+                                <option value="child">Child</option>
+                                <option value="other_relative">Other relative</option>
+                                <option value="other">Other household member</option>
+                            </select>
+                            <div class="invalid-feedback">Choose a relationship.</div>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-6 col-md-4">
+                            <label class="form-label" data-for="years_licensed">Years licensed</label>
+                            <input type="number" class="form-control" data-field="years_licensed" required min="0" max="80">
+                            <div class="invalid-feedback">Enter 0&ndash;80.</div>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <label class="form-label" data-for="primary_vehicle">Vehicle they drive most</label>
+                            <select class="form-select driver-vehicle" data-field="primary_vehicle" required></select>
+                            <div class="invalid-feedback">Choose a vehicle.</div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <template id="tpl-jewelry">
+                <div class="repeat-item card p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h4 class="h6 mb-0 repeat-item-title"></h4>
+                        <button type="button" class="btn btn-sm valent-btn-outline repeat-remove">Remove</button>
+                    </div>
+                    <div class="row g-3 mb-2">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label" data-for="item_type">Item type</label>
+                            <select class="form-select" data-field="item_type" required>
+                                <option value="">Choose...</option>
+                                <option value="ring">Ring</option>
+                                <option value="necklace">Necklace</option>
+                                <option value="bracelet">Bracelet</option>
+                                <option value="earrings">Earrings</option>
+                                <option value="watch">Watch</option>
+                                <option value="other">Other</option>
+                            </select>
+                            <div class="invalid-feedback">Choose an item type.</div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label" data-for="value">Estimated value ($)</label>
+                            <input type="number" class="form-control jewelry-value" data-field="value" required min="1" step="any">
+                            <div class="invalid-feedback">Enter the item's estimated value.</div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" data-for="description">Description</label>
+                        <textarea class="form-control" data-field="description" rows="2" required maxlength="500" placeholder="e.g. 1.5 ct diamond engagement ring, platinum band"></textarea>
+                        <div class="invalid-feedback">Briefly describe the item.</div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label" data-for="appraised">Professionally appraised?</label>
+                            <select class="form-select" data-field="appraised" required>
+                                <option value="">Choose...</option>
+                                <option value="yes">Yes</option>
+                                <option value="no">No</option>
+                            </select>
+                            <div class="invalid-feedback">Choose yes or no.</div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label" data-for="appraisal_date">Appraisal date <span class="text-muted">(optional)</span></label>
+                            <input type="date" class="form-control appraisal-date" data-field="appraisal_date">
+                            <div class="invalid-feedback">The appraisal date can't be in the future.</div>
+                        </div>
+                    </div>
+                </div>
+            </template>
         </section>
 
     </main>

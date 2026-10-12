@@ -1,32 +1,42 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="crimson-pro">
 <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>Valent Partners | Behavior &amp; Reviewer Dashboard (Prototype)</title>
-    <meta name="description" content="Valent Partners mockup 2: customer behavior analytics and reviewer dashboard prototype.">
+    <title>Valent Partners | Agent Dashboard</title>
+    <meta name="description" content="Valent Partners mockup 2: agent dashboard with application funnel, friction metrics, and review queue, loaded from the valent_insurance database.">
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <!-- Bootstrap 5 via CDN (no jQuery dependency required for this version) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="styles/index.css">
+    <link rel="stylesheet" href="styles/themes.css">
 </head>
 <body>
 
-    <!-- Prototype / Demonstration banner -->
+    <!-- Prototype banner -->
     <div class="prototype-banner text-center py-1 small">
-        PROTOTYPE / DEMONSTRATION &mdash; Every number on this page is DEMONSTRATION DATA / NOT REAL CUSTOMER ANALYTICS. No real applicants, carrier rules, or PII are represented.
+        PROTOTYPE &mdash; Live data from the valent_insurance database. Records from 03_mock_data.sql are fictional test accounts. There is no login yet.
     </div>
 
     <!-- Top navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark valent-navbar">
-        <div class="container-fluid px-3 px-lg-4">
+        <div class="container-fluid px-3 px-lg-4 flex-wrap gap-2">
             <a class="navbar-brand fw-bold mb-0" href="#">Valent&nbsp;Partners</a>
-            <span class="navbar-text text-white-50 d-none d-md-inline">Behavior &amp; Reviewer Dashboard &mdash; Mockup 2</span>
+            <span class="navbar-text text-white-50 d-none d-md-inline me-auto">Agent Dashboard</span>
+            <div class="d-flex align-items-center gap-2">
+                <label for="actingAs" class="text-white-50 small mb-0 text-nowrap">Acting as</label>
+                <select class="form-select form-select-sm acting-as-select" id="actingAs">
+                    <option value="">Choose an agent...</option>
+                </select>
+            </div>
         </div>
     </nav>
 
     <main class="container-fluid px-3 px-lg-4 pb-5">
+
+        <!-- Shown when the API can't be reached -->
+        <div class="alert alert-danger mt-3 d-none" id="apiError" role="alert"></div>
 
         <!-- ============ FILTERS ============ -->
         <section class="filters-bar shadow-sm my-3 p-3">
@@ -38,30 +48,33 @@
                 <div class="col-6 col-md-3">
                     <label for="filterLine" class="form-label fw-semibold small mb-1">Insurance Line</label>
                     <select class="form-select form-select-sm" id="filterLine">
-                        <option value="all">All Lines</option>
-                        <option value="homeowners">Homeowners</option>
-                        <option value="flood">Flood</option>
-                        <option value="jewelry">Jewelry</option>
+                        <option value="">All Lines</option>
+                        <option value="HOME">Homeowners</option>
+                        <option value="FLOOD">Flood</option>
+                        <option value="JEWELRY">Jewelry</option>
+                        <option value="AUTO">Auto</option>
                     </select>
                 </div>
                 <div class="col-6 col-md-3">
-                    <label for="filterRange" class="form-label fw-semibold small mb-1">Date Range</label>
+                    <label for="filterRange" class="form-label fw-semibold small mb-1">Started</label>
                     <select class="form-select form-select-sm" id="filterRange">
                         <option value="last7">Last 7 days</option>
-                        <option value="last30" selected>Last 30 days</option>
+                        <option value="last30">Last 30 days</option>
                         <option value="last90">Last 90 days</option>
                         <option value="ytd">Year to date</option>
+                        <option value="all" selected>All time</option>
                     </select>
                 </div>
-                <div class="col-6 col-md-3">
-                    <button type="button" class="btn valent-btn-outline btn-sm w-100" id="resetFiltersBtn">Reset Filters</button>
+                <div class="col-6 col-md-3 d-flex gap-2">
+                    <button type="button" class="btn valent-btn-outline btn-sm w-100" id="resetFiltersBtn">Reset</button>
+                    <button type="button" class="btn btn-light btn-sm w-100" id="refreshBtn">Refresh</button>
                 </div>
             </div>
             <p class="small text-muted mb-0 mt-2" id="filterSummary"></p>
         </section>
 
         <div class="alert drilldown-note small mb-3">
-            <strong>State / insurance drill-down:</strong> changing the filters above updates every section below using demonstration datasets for a handful of example states. A higher exit rate for a state does not by itself prove that state's rules caused the behavior &mdash; it is a starting point for investigation, not a conclusion.
+            <strong>State / insurance drill-down:</strong> the filters above apply to every section below. Bundles count toward each of their lines. A higher exit rate for a state does not by itself prove that state's rules caused the behavior &mdash; it is a starting point for investigation, not a conclusion.
         </div>
 
         <!-- ============ KPI OVERVIEW ============ -->
@@ -78,7 +91,7 @@
                         <h2 class="h5 section-heading mb-0">Application Funnel</h2>
                         <span class="text-muted small">Click a stage for detail</span>
                     </div>
-                    <p class="text-muted small mb-3">Users reaching each step, with continuation / drop-off between steps. The step with the highest friction is flagged automatically.</p>
+                    <p class="text-muted small mb-3">Applications reaching each step of the form, with continuation / drop-off between steps. The step with the biggest drop-off is flagged.</p>
                     <div id="funnelContainer"></div>
                 </div>
             </div>
@@ -91,7 +104,8 @@
                     <h2 class="h5 section-heading">Confusion / Friction Metrics</h2>
 
                     <div class="alert metric-clarification small">
-                        <strong>Important metric clarification:</strong> "dwell time," "hover time," "focus time," and "hesitation" are different signals that require different instrumentation. The values below represent an average <em>page/step dwell time</em> concept only. Exact production definitions and thresholds (e.g., what counts as a "quick exit") must still be agreed with the client &mdash; nothing here is final.
+                        <strong>Where these numbers come from:</strong> the <code>analytics_events</code> table. Right now only <code>03_mock_data.sql</code> fills it &mdash; the customer form doesn't send tracking events yet, so new applications show up in the funnel but not here.
+                        "Dwell time" below means time on a step, not hover or field-focus time. What counts as a "quick exit" still needs to be agreed with the client.
                     </div>
 
                     <div class="table-responsive">
@@ -99,12 +113,13 @@
                             <thead>
                                 <tr>
                                     <th>Step</th>
+                                    <th>Visits</th>
                                     <th>Avg Dwell Time</th>
                                     <th>Exit Rate</th>
                                     <th>Quick-Exit Rate</th>
                                     <th>Drop-off</th>
                                     <th>Validation Errors</th>
-                                    <th>Repeat Interactions</th>
+                                    <th>Back Clicks</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
@@ -115,24 +130,37 @@
             </div>
         </section>
 
-        <!-- ============ REVIEWER / APPLICATION QUEUE PREVIEW ============ -->
+        <!-- ============ REVIEW QUEUE ============ -->
         <section class="mb-4">
             <div class="card shadow-sm">
                 <div class="card-body">
-                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-1">
-                        <h2 class="h5 section-heading mb-0">Reviewer / Application Queue Preview</h2>
-                        <span class="badge mock-badge">ROLES &amp; PERMISSIONS: UNRESOLVED REQUIREMENT</span>
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
+                        <h2 class="h5 section-heading mb-0">Application Review Queue</h2>
+                        <div class="d-flex align-items-center gap-2">
+                            <label for="queueStatus" class="small text-muted mb-0">Show</label>
+                            <select class="form-select form-select-sm" id="queueStatus">
+                                <option value="open" selected>Needs action</option>
+                                <option value="submitted">New (submitted)</option>
+                                <option value="under_review">Under review</option>
+                                <option value="escalated">Escalated</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                                <option value="all">All submitted</option>
+                            </select>
+                        </div>
                     </div>
-                    <p class="text-muted small mb-3">Lightweight concept only &mdash; no real authentication, roles, or underwriting decisions. Click a row for a mock detail panel.</p>
+                    <p class="text-muted small mb-3">Submitted applications matching the filters above. Click a row to see the customer's answers and approve, reject, or escalate it.</p>
                     <div class="table-responsive">
                         <table class="table table-hover align-middle bg-white mb-0" id="queueTable">
                             <thead>
                                 <tr>
-                                    <th>Application ID</th>
+                                    <th>Application</th>
+                                    <th>Applicant</th>
                                     <th>Insurance Line</th>
                                     <th>State</th>
                                     <th>Status</th>
-                                    <th>Reason for Review</th>
+                                    <th>Assigned To</th>
+                                    <th>Latest Note</th>
                                     <th>Submitted</th>
                                 </tr>
                             </thead>
@@ -148,25 +176,27 @@
         <section class="mb-5">
             <div class="card shadow-sm">
                 <div class="card-body">
-                    <h2 class="h5 section-heading">Assumptions, Metric Definitions &amp; Open Questions</h2>
-                    <p class="text-muted small">Required end-of-build output for client review. Nothing in this section is a finalized business rule.</p>
+                    <h2 class="h5 section-heading">Metric Definitions &amp; Open Questions</h2>
+                    <p class="text-muted small">For client review. Nothing in this section is a finalized business rule.</p>
                     <div class="accordion" id="assumptionsAccordion">
 
                         <div class="accordion-item">
                             <h3 class="accordion-header">
-                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#accMetrics">Metric Definitions Used in This Prototype</button>
+                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#accMetrics">How Each Metric Is Calculated</button>
                             </h3>
                             <div id="accMetrics" class="accordion-collapse collapse show" data-bs-parent="#assumptionsAccordion">
                                 <div class="accordion-body small">
                                     <ul class="mb-0">
-                                        <li><strong>Sessions started</strong> &mdash; mock count of users entering the funnel at Landing.</li>
-                                        <li><strong>Completion rate</strong> &mdash; mock % of sessions reaching Completion.</li>
-                                        <li><strong>Abandonment rate</strong> &mdash; 100% minus completion rate.</li>
-                                        <li><strong>Avg. session time</strong> &mdash; sum of mock average dwell time across steps; not a measured production metric yet.</li>
-                                        <li><strong>Quick-exit rate</strong> &mdash; illustrative average of per-step "left very soon after arriving" rates.</li>
-                                        <li><strong>Dwell time</strong> &mdash; illustrative average time on a step; distinct from hover/focus time (see clarification banner above).</li>
-                                        <li><strong>Validation-error rate</strong> &mdash; illustrative % of step visits that triggered a form validation error.</li>
-                                        <li><strong>Needs Attention</strong> &mdash; a mock composite of exit rate, quick-exit rate, and validation-error rate, flagged only to demonstrate the concept.</li>
+                                        <li><strong>Applications started</strong> &mdash; rows in <code>applications</code> created in the date range.</li>
+                                        <li><strong>Completion rate</strong> &mdash; % of started applications that were submitted.</li>
+                                        <li><strong>Not submitted</strong> &mdash; 100% minus completion rate. Includes applications still in progress.</li>
+                                        <li><strong>Awaiting review</strong> &mdash; applications that are submitted, under review, or escalated.</li>
+                                        <li><strong>Avg. time to submit</strong> &mdash; average time from starting an application to submitting it.</li>
+                                        <li><strong>Funnel</strong> &mdash; how many applications reached each step (from <code>applications.current_step</code>).</li>
+                                        <li><strong>Dwell time</strong> &mdash; average time on a step before finishing it or leaving the site.</li>
+                                        <li><strong>Exit / quick-exit rate</strong> &mdash; % of visits to a step that ended with the customer leaving the site (quick = within the threshold below).</li>
+                                        <li><strong>Validation errors</strong> &mdash; % of visits that hit at least one form error.</li>
+                                        <li><strong>Back clicks</strong> &mdash; times customers pressed Back from that step.</li>
                                     </ul>
                                 </div>
                             </div>
@@ -174,14 +204,13 @@
 
                         <div class="accordion-item">
                             <h3 class="accordion-header">
-                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#accThresholds">Mock Thresholds Used</button>
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#accThresholds">Placeholder Thresholds</button>
                             </h3>
                             <div id="accThresholds" class="accordion-collapse collapse" data-bs-parent="#assumptionsAccordion">
                                 <div class="accordion-body small">
                                     <ul class="mb-0">
-                                        <li>"Needs Attention" is shown above an illustrative friction-score threshold in this prototype only.</li>
-                                        <li>No specific "quick exit" time boundary (e.g., "&lt; 10 seconds") is asserted as final &mdash; a placeholder concept only.</li>
-                                        <li>State and insurance-line multipliers used to vary mock data were invented for demonstration purposes and are not based on real Valent Partners or carrier data.</li>
+                                        <li>A "quick exit" is leaving within <span id="quickExitSeconds">10</span> seconds. This is a placeholder, not a client-approved definition.</li>
+                                        <li>"Needs Attention" / "Watch" use a simple score: exit rate + 1.5 &times; quick-exit rate + 1.2 &times; validation-error rate. The cut-offs (45 and 25) are placeholders.</li>
                                     </ul>
                                 </div>
                             </div>
@@ -194,11 +223,11 @@
                             <div id="accUnresolved" class="accordion-collapse collapse" data-bs-parent="#assumptionsAccordion">
                                 <div class="accordion-body small">
                                     <ul class="mb-0">
-                                        <li>Exact production event names, timestamps, and metric formulas.</li>
+                                        <li>Agent login and employee vs. admin permissions (anyone can pick any agent in "Acting as" today).</li>
+                                        <li>Sending tracking events from the customer form to <code>analytics_events</code>.</li>
                                         <li>Which metrics belong on the landing dashboard vs. deeper drill-down pages.</li>
-                                        <li>Employee vs. admin role permissions for reviewer access.</li>
                                         <li>Retention, privacy, and consent requirements for behavioral tracking.</li>
-                                        <li>Which applicant-level details a reviewer should be able to open from aggregate analytics.</li>
+                                        <li>Which applicant-level details an agent should be able to open from aggregate analytics.</li>
                                     </ul>
                                 </div>
                             </div>
@@ -214,9 +243,9 @@
                                         <li>When you say "hover" or "how long users stay," do you mean page time, field-focus time, actual mouse-hover duration, or something else?</li>
                                         <li>What should count as leaving "quickly" &mdash; a fixed number of seconds, leaving before interacting, or something else?</li>
                                         <li>Which application steps are most important to monitor closely?</li>
-                                        <li>Do you want friction metrics compared by state and insurance type?</li>
                                         <li>What should happen operationally when the dashboard reveals a problem?</li>
                                         <li>Who should have access to aggregate analytics vs. individual application details?</li>
+                                        <li>What review statuses and actions do your agents actually use?</li>
                                     </ul>
                                 </div>
                             </div>
@@ -230,7 +259,7 @@
     </main>
 
     <footer class="text-center text-muted small py-4 border-top">
-        Valent Partners &mdash; Sprint 1 Mockup 2 &mdash; Prototype for internal review only. No real analytics pipeline, database, or reviewer authentication is implemented.
+        Valent Partners &mdash; Sprint 1 Mockup 2 &mdash; Agent dashboard prototype for internal review. Requires the API (<code>dotnet run</code> in the API folder).
     </footer>
 
     <!-- Step detail modal (funnel + friction table) -->
@@ -249,20 +278,26 @@
         </div>
     </div>
 
-    <!-- Application detail modal (reviewer queue) -->
+    <!-- Application detail modal (review queue) -->
     <div class="modal fade" id="appDetailModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="appDetailModalLabel">Application Detail</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body" id="appDetailModalBody"></div>
-                <div class="modal-footer">
-                    <span class="small text-muted me-auto">Prototype only &mdash; actions below are non-functional.</span>
-                    <button type="button" class="btn valent-btn-outline btn-sm" disabled>Request Info</button>
-                    <button type="button" class="btn valent-btn-outline btn-sm" disabled>Escalate</button>
-                    <button type="button" class="btn valent-btn-primary btn-sm" disabled>Approve</button>
+                <div class="modal-footer d-block" id="appActions">
+                    <div class="alert alert-danger small py-2 d-none" id="appActionError" role="alert"></div>
+                    <label for="appActionNote" class="form-label small mb-1">Note <span class="text-muted">(required to reject or escalate)</span></label>
+                    <textarea class="form-control form-control-sm mb-2" id="appActionNote" rows="2" maxlength="255"></textarea>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <span class="small text-muted me-auto" id="appActionHint"></span>
+                        <button type="button" class="btn valent-btn-outline btn-sm" data-action="under_review">Start Review</button>
+                        <button type="button" class="btn valent-btn-outline btn-sm" data-action="escalated">Escalate</button>
+                        <button type="button" class="btn valent-btn-outline btn-sm" data-action="rejected">Reject</button>
+                        <button type="button" class="btn valent-btn-primary btn-sm" data-action="approved">Approve</button>
+                    </div>
                 </div>
             </div>
         </div>
