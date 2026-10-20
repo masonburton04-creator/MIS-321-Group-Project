@@ -2,16 +2,31 @@
    Custom rules only supplement Bootstrap; layout/grid/spacing relies on Bootstrap utilities. */
 
 :root {
-    --valent-crimson: #9e1b32;
-    --valent-crimson-dark: #7a1526;
-    --valent-crimson-light: #fbeaed;
-    --valent-gray-900: #212529;
+    /* Brand tokens. These defaults are the original crimson look; the
+       Crimson Professional scheme in themes.css overrides them via <html data-theme="crimson-pro">. */
+    --brand-primary: #9e1b32;
+    --brand-primary-dark: #7a1526;
+    --brand-primary-light: #fbeaed;
+    /* Informational callouts are blue so they never read as errors (red = error only) */
+    --info-bg: #e8eef5;
+    --info-border: #c3d1e0;
+    --info-text: #243b53;
+    --brand-primary-soft: #c98a95;   /* disabled buttons */
+    --brand-primary-border: #f1c4cc; /* borders on tinted banners */
+    --brand-shadow-sm: rgba(158, 27, 50, 0.12);
+    --brand-shadow-md: rgba(158, 27, 50, 0.18);
+    --brand-accent: #9e1b32;
+    --brand-on-accent: #fff;
+    --brand-header: #9e1b32;         /* comparison table header */
+    --brand-surface-alt: #f8f5f6;    /* comparison table label column */
+    --brand-bg: #f7f5f6;
+    --brand-text: #212529;
     --valent-gray-600: #6c757d;
 }
 
 body {
-    background-color: #f7f5f6;
-    color: var(--valent-gray-900);
+    background-color: var(--brand-bg);
+    color: var(--brand-text);
 }
 
 /* Prototype banner */
@@ -22,38 +37,39 @@ body {
     letter-spacing: 0.02em;
 }
 
-/* Navbar */
+/* Navbar (inset stripe shows the accent color; invisible when accent = primary) */
 .valent-navbar {
-    background-color: var(--valent-crimson);
+    background-color: var(--brand-primary);
+    box-shadow: inset 0 -4px 0 var(--brand-accent);
 }
 
 /* Buttons */
 .valent-btn-primary {
-    background-color: var(--valent-crimson);
-    border-color: var(--valent-crimson);
+    background-color: var(--brand-primary);
+    border-color: var(--brand-primary);
     color: #fff;
 }
 .valent-btn-primary:hover,
 .valent-btn-primary:focus {
-    background-color: var(--valent-crimson-dark);
-    border-color: var(--valent-crimson-dark);
+    background-color: var(--brand-primary-dark);
+    border-color: var(--brand-primary-dark);
     color: #fff;
 }
 .valent-btn-primary:disabled {
-    background-color: #c98a95;
-    border-color: #c98a95;
+    background-color: var(--brand-primary-light);
+    border-color: var(--brand-primary-soft);
 }
 
 .valent-btn-outline {
     background-color: transparent;
-    border: 1px solid var(--valent-crimson);
-    color: var(--valent-crimson);
+    border: 1px solid var(--brand-primary);
+    color: var(--brand-primary);
 }
 .valent-btn-outline:hover,
 .valent-btn-outline:focus {
-    background-color: var(--valent-crimson-light);
-    color: var(--valent-crimson-dark);
-    border-color: var(--valent-crimson-dark);
+    background-color: var(--brand-primary-light);
+    color: var(--brand-primary-dark);
+    border-color: var(--brand-primary-dark);
 }
 
 /* Step indicator */
@@ -83,17 +99,36 @@ body {
     display: block;
 }
 .step-item.active .step-num {
-    background-color: var(--valent-crimson);
+    background-color: var(--brand-primary);
     color: #fff;
 }
 .step-item.active {
-    color: var(--valent-gray-900);
+    color: var(--brand-text);
     font-weight: 600;
 }
 .step-item.completed .step-num {
-    background-color: var(--valent-crimson-light);
-    color: var(--valent-crimson);
-    border: 2px solid var(--valent-crimson);
+    background-color: var(--brand-primary-light);
+    color: var(--brand-accent);
+    border: 2px solid var(--brand-accent);
+}
+
+/* Finished steps can be clicked to go back */
+.step-item.clickable {
+    cursor: pointer;
+}
+.step-item.clickable:hover .step-num,
+.step-item.clickable:focus-visible .step-num {
+    background-color: var(--brand-accent);
+    border-color: var(--brand-accent);
+    color: #fff;
+}
+.step-item.clickable:hover .step-label {
+    text-decoration: underline;
+}
+.step-item.clickable:focus-visible {
+    outline: 2px solid var(--brand-accent);
+    outline-offset: 4px;
+    border-radius: 0.5rem;
 }
 
 /* Insurance type selection cards */
@@ -105,15 +140,15 @@ body {
 }
 .insurance-type-card:hover,
 .insurance-type-card:focus-visible {
-    border-color: var(--valent-crimson);
-    box-shadow: 0 0.5rem 1rem rgba(158, 27, 50, 0.12);
+    border-color: var(--brand-primary);
+    box-shadow: 0 0.5rem 1rem var(--brand-shadow-sm);
     transform: translateY(-2px);
     outline: none;
 }
 .insurance-type-card.selected {
-    border-color: var(--valent-crimson);
-    background-color: var(--valent-crimson-light);
-    box-shadow: 0 0.5rem 1rem rgba(158, 27, 50, 0.18);
+    border-color: var(--brand-primary);
+    background-color: var(--brand-primary-light);
+    box-shadow: 0 0.5rem 1rem var(--brand-shadow-md);
 }
 .type-icon {
     font-size: 1.75rem;
@@ -122,9 +157,9 @@ body {
 
 /* Mock/state banner */
 .state-mock-banner {
-    background-color: var(--valent-crimson-light);
-    border: 1px solid #f1c4cc;
-    color: var(--valent-crimson-dark);
+    background-color: var(--info-bg);
+    border: 1px solid var(--info-border);
+    color: var(--info-text);
 }
 
 /* Coverage cards */
@@ -138,8 +173,8 @@ body {
     box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.08);
 }
 .coverage-card.selected-for-compare {
-    border-color: var(--valent-crimson);
-    box-shadow: 0 0 0 2px var(--valent-crimson-light) inset;
+    border-color: var(--brand-primary);
+    box-shadow: 0 0 0 2px var(--brand-primary-light) inset;
 }
 .coverage-card .coverage-letter {
     display: inline-flex;
@@ -148,8 +183,8 @@ body {
     width: 2.25rem;
     height: 2.25rem;
     border-radius: 50%;
-    background-color: var(--valent-crimson);
-    color: #fff;
+    background-color: var(--brand-accent);
+    color: var(--brand-on-accent);
     font-weight: 700;
     flex-shrink: 0;
 }
@@ -170,14 +205,33 @@ body {
 
 /* Comparison table */
 .compare-table th {
-    background-color: var(--valent-crimson);
+    background-color: var(--brand-header);
     color: #fff;
     vertical-align: middle;
 }
 .compare-table td.field-label {
-    background-color: #f8f5f6;
+    background-color: var(--brand-surface-alt);
     font-weight: 600;
     white-space: nowrap;
+}
+
+/* State comparison (explorer) */
+.state-compare-table {
+    font-size: 0.9rem;
+    min-width: 640px; /* scrolls sideways on phones instead of squeezing 4 columns */
+}
+.state-compare-table td.field-label {
+    white-space: normal;
+}
+.state-compare-table td.your-state {
+    background-color: var(--brand-primary-light);
+}
+.verify-badge {
+    background-color: #fff3cd;
+    color: #664d03;
+    border: 1px solid #ffe69c;
+    font-weight: 600;
+    font-size: 0.7rem;
 }
 
 /* Next step cards */
@@ -208,4 +262,43 @@ body {
 @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
+}
+
+/* ---------------- Quote step: demo estimate ---------------- */
+.quote-card {
+    border: 2px solid var(--brand-primary-border, #e8c3ca);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    background-color: #fff;
+}
+.quote-headline {
+    margin-bottom: 1rem;
+}
+.quote-label {
+    font-weight: 600;
+    color: var(--brand-accent, #243b53);
+}
+.quote-total {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--brand-primary, #9e1b32);
+    line-height: 1.2;
+}
+.quote-sub {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+.quote-line {
+    border-top: 1px solid #dee2e6;
+    padding: 0.75rem 0;
+}
+.quote-line:last-of-type {
+    margin-bottom: 0.5rem;
+}
+.quote-badge-referred { background-color: #e0ecfa; color: #1c4f8a; }
+.quote-badge-incomplete { background-color: #fff3cd; color: #664d03; }
+.quote-disclaimer {
+    border-top: 1px dashed #ced4da;
+    padding-top: 0.75rem;
+    color: #495057;
 }
