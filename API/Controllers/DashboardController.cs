@@ -1,5 +1,6 @@
 using API.Data;
 using API.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MySqlConnector;
 
@@ -9,6 +10,7 @@ namespace API.Controllers;
 // KPI, funnel, and friction numbers for the agent dashboard (mockup 2).
 // Every filter is optional. range: last7 | last30 | last90 | ytd | all (default all)
 [ApiController]
+[Authorize] // signed-in staff only
 [Route("api/dashboard")]
 public class DashboardController : ControllerBase
 {
@@ -121,6 +123,127 @@ public class DashboardController : ControllerBase
             }
         }
 
+        result.Agents = await LoadAgentUsageAsync(conn, filter, AddFilterParams);
+        result.Pricing = await LoadPricingAsync(conn, filter, AddFilterParams, line?.Trim().ToUpperInvariant());
+
         return Ok(result);
+    }
+
+    // How often applications need an agent, plus each agent's status changes
+    private static async Task<AgentUsage> LoadAgentUsageAsync(MySqlConnection conn, string filter, Action<MySqlCommand> addFilterParams)
+    {
+        var usage = new AgentUsage();
+
+        var summaryCmd = new MySqlCommand(
+            $@"SELECT COUNT(*) AS submitted,
+                      COALESCE(SUM(EXISTS (SELECT 1 FROM application_status_history h
+                                           WHERE h.application_id = a.application_id AND h.changed_by IS NOT NULL)), 0) AS handled,
+                      COALESCE(SUM(EXISTS (SELECT 1 FROM application_status_history h
+                                           WHERE h.application_id = a.application_id AND h.new_status = 'escalated')), 0) AS escalated
+               FROM applications a
+               WHERE a.submitted_at IS NOT NULL AND {filter}", conn);
+        addFilterParams(summaryCmd);
+        await using (var reader = await summaryCmd.ExecuteReaderAsync())
+        {
+            await reader.ReadAsync();
+            usage.Submitted = Convert.ToInt32(reader["submitted"]);
+            usage.HandledByAgent = Convert.ToInt32(reader["handled"]);
+            usage.Escalated = Convert.ToInt32(reader["escalated"]);
+        }
+
+        // Only agents with at least one action on a matching application are listed
+        var staffCmd = new MySqlCommand(
+            $@"SELECT s.staff_id, CONCAT(s.first_name, ' ', s.last_name) AS name, s.role,
+                      COUNT(*) AS actions,
+                      COUNT(DISTINCT h.application_id) AS apps,
+                      COALESCE(SUM(h.new_status = 'approved'), 0) AS approved,
+                      COALESCE(SUM(h.new_status = 'rejected'), 0) AS rejected,
+                      COALESCE(SUM(h.new_status = 'escalated'), 0) AS escalated,
+                      MAX(h.changed_at) AS last_active
+               FROM application_status_history h
+               JOIN staff_users s ON s.staff_id = h.changed_by
+               JOIN applications a ON a.application_id = h.application_id
+               WHERE {filter}
+               GROUP BY s.staff_id, s.first_name, s.last_name, s.role
+               ORDER BY actions DESC, name", conn);
+        addFilterParams(staffCmd);
+        await using (var reader = await staffCmd.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                usage.Staff.Add(new AgentActivity
+                {
+                    StaffId = reader.GetInt32("staff_id"),
+                    Name = reader.GetString("name"),
+                    Role = reader.GetString("role"),
+                    Actions = Convert.ToInt32(reader["actions"]),
+                    Applications = Convert.ToInt32(reader["apps"]),
+                    Approved = Convert.ToInt32(reader["approved"]),
+                    Rejected = Convert.ToInt32(reader["rejected"]),
+                    Escalated = Convert.ToInt32(reader["escalated"]),
+                    LastActive = reader.IsDBNull(reader.GetOrdinal("last_active")) ? null : reader.GetDateTime("last_active")
+                });
+            }
+        }
+        return usage;
+    }
+
+    // Min / max / average demo estimate per line for applications that reached the Quote step.
+    // Recalculated with the current demo rates rather than read from the quotes table, so
+    // applications created by 03_mock_data.sql (which never ran the Quote step) are included.
+    private static async Task<PricingSummary> LoadPricingAsync(MySqlConnection conn, string filter,
+        Action<MySqlCommand> addFilterParams, string? lineFilter)
+    {
+        var pricing = new PricingSummary();
+
+        var idsCmd = new MySqlCommand(
+            $"SELECT a.application_id FROM applications a WHERE a.current_step >= 4 AND {filter}", conn);
+        addFilterParams(idsCmd);
+        var ids = new List<int>();
+        await using (var reader = await idsCmd.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync()) ids.Add(reader.GetInt32(0));
+        }
+        pricing.QuotedApplications = ids.Count;
+
+        var estimates = new List<LineQuote>();
+        foreach (var id in ids)
+        {
+            var detail = await ApplicationsController.LoadDetailAsync(conn, id);
+            if (detail == null) continue;
+            QuoteResponse quote;
+            try
+            {
+                quote = await ApplicationsController.BuildQuoteAsync(conn, detail);
+            }
+            catch (InvalidOperationException ex)
+            {
+                pricing.Error = ex.Message;
+                return pricing;
+            }
+            pricing.RuleVersion = quote.RuleVersion;
+
+            // With a line filter, a bundle only counts toward that line
+            foreach (var lineQuote in quote.Lines.Where(l => lineFilter == null || l.LineCode == lineFilter))
+            {
+                if (lineQuote.Low != null && lineQuote.High != null) estimates.Add(lineQuote);
+                else if (lineQuote.Status == "REFERRED") pricing.ReferredLines++;
+                else pricing.IncompleteLines++;
+            }
+        }
+
+        pricing.Lines = estimates
+            .GroupBy(l => l.LineCode)
+            .Select(g => new LinePricing
+            {
+                LineCode = g.Key,
+                Estimates = g.Count(),
+                Min = g.Min(l => l.Low!.Value),
+                Max = g.Max(l => l.High!.Value),
+                AvgLow = Math.Round(g.Average(l => l.Low!.Value)),
+                AvgHigh = Math.Round(g.Average(l => l.High!.Value))
+            })
+            .ToList();
+        return pricing;
     }
 }

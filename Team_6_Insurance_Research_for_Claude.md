@@ -307,6 +307,28 @@ SOW requires behavioral and funnel metrics; track completion percentage by insur
 5. Add quote status service and reviewer referral queue; never hardcode pretend premiums.
 6. Implement accessible comparison screens and privacy-safe funnel analytics; test the scenarios above.
 
+## 15a. Sprint demo states: Alabama, Texas, New York (researched Oct 2026)
+The sprint limits the prototype to AL, TX and NY. These rules feed the explorer's "Compare Across States" table (STATE_COMPARISON in mockup_1 index.js). Rules only, no prices. "Verify" = only secondary or dated sources found; confirm with the regulator/Valent Partners before relying on it.
+
+| Topic | Alabama | Texas | New York |
+|---|---|---|---|
+| Auto minimum liability | 25/50/25 [S1] | 30/60/25 [S3] | 25/50/10 [S5] |
+| Auto PIP | Not required [S1] | Included unless rejected in writing [S3] | Required, $50,000 no-fault [S6] |
+| Auto UM | Must be offered, rejectable in writing (Verify) | Must be offered, rejectable in writing [S3] | Required at 25/50 [S6] |
+| Home: wind/hurricane deductible | Separate % named-storm deductible common on coast (Verify) | % wind/hail deductibles common (Verify) | Hurricane deductibles allowed, typically 1-5% of dwelling [S7] |
+| Home: insurer of last resort | AIUA "Beach Pool", coastal Baldwin/Mobile (Verify) | TWIA (wind/hail, 14 first-tier coastal counties + part of Harris); Texas FAIR Plan statewide [S4] | NYPIUA FAIR Plan; current eligibility unconfirmed (Verify) |
+| Home: mitigation discounts | Mandatory wind discounts for IBHS FORTIFIED homes [S2, 2014 handout: Verify current %] | None found (Verify) | None found (Verify) |
+| Flood | NFIP rules are federal; same in all three. TWIA/TFPA policies exclude flood [S4] | | |
+| Jewelry | No state-specific rules found (Verify) | | |
+
+[S1] https://www.revenue.alabama.gov/tax-types/mandatory-liability-insurance/
+[S2] https://www.aldoi.gov/PDF/Legal/HandoutWindstormDamageMitigation.pdf
+[S3] https://www.tdi.texas.gov/pubs/consumer/cb020.html
+[S4] https://www.tdi.texas.gov/tips/insurers-of-last-resort.html
+[S5] https://www.dfs.ny.gov/faqs/consumer-auto/how-much-auto-insurance-must-i-carry
+[S6] https://www.dfs.ny.gov/faqs/consumer-auto/what-auto-coverages-do-i-need
+[S7] https://www.dfs.ny.gov/help_for_homeowners/insurance/basic_coverage/awindded/
+
 ## 16. Sources and verification links
 References were checked for this research on October 12, 2026. The public references below are general industry/regulator guidance. Exact carrier forms, filed rating factors, legal disclosures and availability require partner approval. The attached SOW remains the only source for Team 6 project acceptance criteria.
 [SOW] Team 6, AI Insurance Quote & Application Assistant, Statement of Work (uploaded; 3 pages).

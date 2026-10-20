@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS escalations;
 DROP TABLE IF EXISTS chat_messages;
 DROP TABLE IF EXISTS chat_sessions;
 DROP TABLE IF EXISTS quotes;
+DROP TABLE IF EXISTS application_documents;
 DROP TABLE IF EXISTS application_status_history;
 DROP TABLE IF EXISTS application_item_answers;
 DROP TABLE IF EXISTS application_answers;
@@ -31,6 +32,7 @@ DROP TABLE IF EXISTS line_state_availability;
 DROP TABLE IF EXISTS insurance_lines;
 DROP TABLE IF EXISTS states;
 DROP TABLE IF EXISTS customers;
+DROP TABLE IF EXISTS staff_sessions;
 DROP TABLE IF EXISTS staff_users;
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -108,6 +110,16 @@ CREATE TABLE staff_users (
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Signed-in dashboard sessions (POST /api/auth/login). Only a SHA-256 hash of
+-- each token is stored, so a copy of this table can't be used to sign in.
+CREATE TABLE staff_sessions (
+  token_hash  CHAR(64)  NOT NULL PRIMARY KEY,
+  staff_id    INT       NOT NULL,
+  created_at  DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at  DATETIME  NOT NULL,
+  FOREIGN KEY (staff_id) REFERENCES staff_users(staff_id) ON DELETE CASCADE
+);
+
 -- Applicants / website visitors who start an application.
 CREATE TABLE customers (
   customer_id INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -180,6 +192,23 @@ CREATE TABLE application_item_answers (
   field_key      VARCHAR(100) NOT NULL,
   field_value    TEXT         NULL,
   PRIMARY KEY (application_id, item_type, item_number, field_key),
+  FOREIGN KEY (application_id) REFERENCES applications(application_id) ON DELETE CASCADE
+);
+
+-- Files the customer attached, e.g. the declarations page of the policy they're
+-- switching from (doc_type 'current_policy', one per application). Stored in the
+-- database so the prototype works on every teammate's computer. Production should
+-- use access-controlled, encrypted file storage (research doc section 12).
+CREATE TABLE application_documents (
+  document_id    INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  application_id INT          NOT NULL,
+  doc_type       VARCHAR(30)  NOT NULL,
+  file_name      VARCHAR(255) NOT NULL,
+  content_type   VARCHAR(100) NOT NULL,            -- application/pdf, image/jpeg, image/png
+  size_bytes     INT          NOT NULL,
+  content        MEDIUMBLOB   NOT NULL,            -- up to 16 MB; the API allows 5 MB
+  uploaded_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (application_id, doc_type),
   FOREIGN KEY (application_id) REFERENCES applications(application_id) ON DELETE CASCADE
 );
 

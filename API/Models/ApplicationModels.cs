@@ -19,11 +19,11 @@ public class SaveStepRequest
     public Dictionary<string, List<Dictionary<string, string?>>> Items { get; set; } = new();
 }
 
-// Agent decision on a submitted application (agent dashboard, mockup 2)
+// Agent decision on a submitted application (agent dashboard, mockup 2).
+// Saved as the signed-in staff member, so it has no staff id.
 public class UpdateStatusRequest
 {
     public string Status { get; set; } = "";   // 'under_review', 'approved', 'rejected', 'escalated'
-    public int StaffId { get; set; }           // the agent making the change
     public string? Note { get; set; }          // required for 'rejected' and 'escalated'
 }
 
@@ -55,6 +55,18 @@ public class ApplicationDetail : ApplicationSummary
     public Dictionary<string, string?> Answers { get; set; } = new();
     public Dictionary<string, List<Dictionary<string, string?>>> Items { get; set; } = new();
     public List<StatusHistoryEntry> History { get; set; } = new();
+    public List<DocumentInfo> Documents { get; set; } = new();
+}
+
+// An uploaded file (not its contents; download it from GET /api/applications/{id}/documents/{documentId})
+public class DocumentInfo
+{
+    public int DocumentId { get; set; }
+    public string DocType { get; set; } = "";      // 'current_policy'
+    public string FileName { get; set; } = "";
+    public string ContentType { get; set; } = "";
+    public int SizeBytes { get; set; }
+    public DateTime UploadedAt { get; set; }
 }
 
 public class StatusHistoryEntry
@@ -75,6 +87,21 @@ public class StaffMember
     public string Role { get; set; } = "";
 }
 
+// ---- Dashboard sign-in (POST /api/auth/login) ----
+
+public class LoginRequest
+{
+    public string Email { get; set; } = "";
+    public string Password { get; set; } = "";
+}
+
+public class LoginResponse
+{
+    public string Token { get; set; } = "";      // send as "Authorization: Bearer <token>"
+    public DateTime ExpiresAt { get; set; }
+    public StaffMember Staff { get; set; } = new();
+}
+
 // ---- Agent dashboard (GET /api/dashboard) ----
 
 public class DashboardResponse
@@ -89,6 +116,53 @@ public class DashboardResponse
 
     public List<StepFriction> Friction { get; set; } = new();
     public int QuickExitSeconds { get; set; }
+
+    public PricingSummary Pricing { get; set; } = new();
+    public AgentUsage Agents { get; set; } = new();
+}
+
+// Demo estimate ranges for applications that reached the Quote step, recalculated
+// with the current demo_quote_factors (same numbers the customer is shown)
+public class PricingSummary
+{
+    public int QuotedApplications { get; set; }    // reached the Quote step
+    public List<LinePricing> Lines { get; set; } = new();
+    public int ReferredLines { get; set; }         // a specialist has to price it (no number shown)
+    public int IncompleteLines { get; set; }       // missing answers, no number shown
+    public string? RuleVersion { get; set; }
+    public string? Error { get; set; }             // e.g. demo_quote_factors table not set up
+}
+
+public class LinePricing
+{
+    public string LineCode { get; set; } = "";
+    public int Estimates { get; set; }             // lines with a dollar range
+    public decimal Min { get; set; }               // lowest low end
+    public decimal Max { get; set; }               // highest high end
+    public decimal AvgLow { get; set; }
+    public decimal AvgHigh { get; set; }
+}
+
+// How often applications need a human agent, and what each agent has done
+public class AgentUsage
+{
+    public int Submitted { get; set; }
+    public int HandledByAgent { get; set; }        // an agent changed its status at least once
+    public int Escalated { get; set; }             // was escalated at any point
+    public List<AgentActivity> Staff { get; set; } = new();
+}
+
+public class AgentActivity
+{
+    public int StaffId { get; set; }
+    public string Name { get; set; } = "";
+    public string Role { get; set; } = "";
+    public int Actions { get; set; }               // status changes made
+    public int Applications { get; set; }          // distinct applications touched
+    public int Approved { get; set; }
+    public int Rejected { get; set; }
+    public int Escalated { get; set; }
+    public DateTime? LastActive { get; set; }
 }
 
 // Behavior metrics for one application step, from analytics_events

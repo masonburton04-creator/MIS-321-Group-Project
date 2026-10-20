@@ -1,13 +1,15 @@
 using API.Data;
 using API.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MySqlConnector;
 
 namespace API.Controllers;
 
-// GET /api/staff - active agents, for the agent dashboard's "Acting as" picker.
-// There is no login yet, so the dashboard just sends the chosen staff_id.
+// GET /api/staff - active agents (signed-in staff only). The dashboard used this for its
+// old "Acting as" picker; kept for future features like assigning an application.
 [ApiController]
+[Authorize] // signed-in staff only
 [Route("api/staff")]
 public class StaffController : ControllerBase
 {

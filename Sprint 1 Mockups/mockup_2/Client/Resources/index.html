@@ -16,7 +16,7 @@
 
     <!-- Prototype banner -->
     <div class="prototype-banner text-center py-1 small">
-        PROTOTYPE &mdash; Live data from the valent_insurance database. Records from 03_mock_data.sql are fictional test accounts. There is no login yet.
+        PROTOTYPE &mdash; Live data from the valent_insurance database. Records from 03_mock_data.sql are fictional test accounts.
     </div>
 
     <!-- Top navbar -->
@@ -24,16 +24,45 @@
         <div class="container-fluid px-3 px-lg-4 flex-wrap gap-2">
             <a class="navbar-brand fw-bold mb-0" href="#">Valent&nbsp;Partners</a>
             <span class="navbar-text text-white-50 d-none d-md-inline me-auto">Agent Dashboard</span>
-            <div class="d-flex align-items-center gap-2">
-                <label for="actingAs" class="text-white-50 small mb-0 text-nowrap">Acting as</label>
-                <select class="form-select form-select-sm acting-as-select" id="actingAs">
-                    <option value="">Choose an agent...</option>
-                </select>
+            <div class="d-flex align-items-center gap-2 d-none" id="signedInBox">
+                <span class="text-white-50 small text-nowrap">Signed in as <strong class="text-white" id="signedInName"></strong></span>
+                <button type="button" class="btn btn-sm btn-outline-light" id="signOutBtn">Sign out</button>
             </div>
         </div>
     </nav>
 
-    <main class="container-fluid px-3 px-lg-4 pb-5">
+    <!-- ============ SIGN IN (shown until a staff member signs in) ============ -->
+    <section class="container py-5 d-none" id="loginScreen">
+        <div class="row justify-content-center">
+            <div class="col-12 col-sm-9 col-md-6 col-lg-4">
+                <div class="card shadow-sm">
+                    <div class="card-body p-4">
+                        <h1 class="h4 section-heading mb-1">Staff sign in</h1>
+                        <p class="text-muted small mb-3">The agent dashboard is for Valent Partners staff only.</p>
+                        <div class="alert alert-danger small d-none" id="loginError" role="alert"></div>
+                        <form id="loginForm" novalidate>
+                            <div class="mb-3">
+                                <label for="loginEmail" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="loginEmail" autocomplete="username" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="loginPassword" class="form-label">Password</label>
+                                <input type="password" class="form-control" id="loginPassword" autocomplete="current-password" required>
+                            </div>
+                            <button type="submit" class="btn valent-btn-primary w-100" id="loginBtn">Sign in</button>
+                        </form>
+                        <p class="small text-muted mt-3 mb-0">
+                            <span class="badge mock-badge me-1">PROTOTYPE</span>
+                            Demo accounts from <code>03_mock_data.sql</code>, e.g. <code>casey.patel@valentpartners.example</code>,
+                            password <code>ValentDemo2026!</code>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <main class="container-fluid px-3 px-lg-4 pb-5 d-none" id="dashboardContent">
 
         <!-- Shown when the API can't be reached -->
         <div class="alert alert-danger mt-3 d-none" id="apiError" role="alert"></div>
@@ -124,6 +153,61 @@
                                 </tr>
                             </thead>
                             <tbody id="frictionTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ PRICING ESTIMATES ============ -->
+        <section class="mb-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                        <h2 class="h5 section-heading mb-0">Estimated Pricing</h2>
+                        <span class="badge mock-badge">DEMO ESTIMATES</span>
+                    </div>
+                    <p class="text-muted small mb-3" id="pricingIntro"></p>
+                    <div class="table-responsive">
+                        <table class="table align-middle bg-white mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Insurance Line</th>
+                                    <th>Estimates</th>
+                                    <th>Lowest</th>
+                                    <th>Highest</th>
+                                    <th>Average Range</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pricingTableBody"></tbody>
+                        </table>
+                    </div>
+                    <p class="small text-muted mb-0 mt-2" id="pricingFootnote"></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ AGENT USAGE ============ -->
+        <section class="mb-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h2 class="h5 section-heading">Agent Usage</h2>
+                    <p class="text-muted small mb-3">How often submitted applications need a human agent, and what each agent has done. Counts status changes on applications matching the filters above.</p>
+                    <div class="row g-3 mb-3" id="agentKpiRow"></div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle bg-white mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Agent</th>
+                                    <th>Actions</th>
+                                    <th>Applications</th>
+                                    <th>Approved</th>
+                                    <th>Rejected</th>
+                                    <th>Escalated</th>
+                                    <th>Last Active</th>
+                                </tr>
+                            </thead>
+                            <tbody id="agentTableBody"></tbody>
                         </table>
                     </div>
                 </div>
@@ -223,7 +307,7 @@
                             <div id="accUnresolved" class="accordion-collapse collapse" data-bs-parent="#assumptionsAccordion">
                                 <div class="accordion-body small">
                                     <ul class="mb-0">
-                                        <li>Agent login and employee vs. admin permissions (anyone can pick any agent in "Acting as" today).</li>
+                                        <li>Employee vs. admin permissions (everyone who signs in can do everything today), password resets, and how staff accounts get created.</li>
                                         <li>Sending tracking events from the customer form to <code>analytics_events</code>.</li>
                                         <li>Which metrics belong on the landing dashboard vs. deeper drill-down pages.</li>
                                         <li>Retention, privacy, and consent requirements for behavioral tracking.</li>

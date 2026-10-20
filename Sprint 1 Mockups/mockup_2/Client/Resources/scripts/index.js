@@ -4,7 +4,9 @@
      GET /api/applications        the review queue
      GET /api/applications/{id}   one application's answers and history
      PUT /api/applications/{id}/status   start review / approve / reject / escalate
-     GET /api/staff               agents for the "Acting as" picker (no login yet) */
+     GET /api/applications/{id}/documents/{documentId}   download an uploaded file
+     POST /api/auth/login, GET /api/auth/me, POST /api/auth/logout   staff sign-in
+   Everything except login needs the signed-in staff member's token (Authorization header). */
 
 (function () {
     'use strict';
@@ -15,20 +17,10 @@
     // REFERENCE DATA (labels only, no metrics)
     // ---------------------------------------------------------------
 
+    // The sprint's demo states (see Database/05_supported_states.sql). Older
+    // applications from other states still show, by their state code.
     var US_STATES = [
-        ['AL', 'Alabama'], ['AK', 'Alaska'], ['AZ', 'Arizona'], ['AR', 'Arkansas'],
-        ['CA', 'California'], ['CO', 'Colorado'], ['CT', 'Connecticut'], ['DE', 'Delaware'],
-        ['FL', 'Florida'], ['GA', 'Georgia'], ['HI', 'Hawaii'], ['ID', 'Idaho'],
-        ['IL', 'Illinois'], ['IN', 'Indiana'], ['IA', 'Iowa'], ['KS', 'Kansas'],
-        ['KY', 'Kentucky'], ['LA', 'Louisiana'], ['ME', 'Maine'], ['MD', 'Maryland'],
-        ['MA', 'Massachusetts'], ['MI', 'Michigan'], ['MN', 'Minnesota'], ['MS', 'Mississippi'],
-        ['MO', 'Missouri'], ['MT', 'Montana'], ['NE', 'Nebraska'], ['NV', 'Nevada'],
-        ['NH', 'New Hampshire'], ['NJ', 'New Jersey'], ['NM', 'New Mexico'], ['NY', 'New York'],
-        ['NC', 'North Carolina'], ['ND', 'North Dakota'], ['OH', 'Ohio'], ['OK', 'Oklahoma'],
-        ['OR', 'Oregon'], ['PA', 'Pennsylvania'], ['RI', 'Rhode Island'], ['SC', 'South Carolina'],
-        ['SD', 'South Dakota'], ['TN', 'Tennessee'], ['TX', 'Texas'], ['UT', 'Utah'],
-        ['VT', 'Vermont'], ['VA', 'Virginia'], ['WA', 'Washington'], ['WV', 'West Virginia'],
-        ['WI', 'Wisconsin'], ['WY', 'Wyoming'], ['DC', 'District of Columbia']
+        ['AL', 'Alabama'], ['TX', 'Texas'], ['NY', 'New York']
     ];
 
     var LINE_LABELS = { HOME: 'Homeowners', FLOOD: 'Flood', JEWELRY: 'Jewelry', AUTO: 'Auto' };
@@ -66,7 +58,8 @@
         start_date: 'Coverage start date',
         coverage_components: 'Coverage components',
         has_homeowners_policy: 'Has a homeowners policy',
-        currently_insured_auto: 'Currently has auto insurance',
+        currently_insured_auto: 'Currently has auto insurance', // older applications, before switching_carrier
+        switching_carrier: 'Switching from another company',
         street: 'Street address',
         city: 'City',
         zip: 'ZIP code',
@@ -100,17 +93,30 @@
     var requestCounter = 0;     // ignores slow responses from older filter changes
     var el = {};
 
+    // Signed-in staff member: { token, staff }. Kept in sessionStorage, so closing the
+    // tab signs out; the server also ends sessions after 8 hours.
+    var SESSION_KEY = 'valentStaffSession';
+    var session = null;
+
     document.addEventListener('DOMContentLoaded', function () {
         cacheDom();
         populateStateFilter();
         bindEvents();
-        loadStaff();
-        refresh();
+        restoreSession();
     });
 
     function cacheDom() {
         el.apiError = document.getElementById('apiError');
-        el.actingAs = document.getElementById('actingAs');
+        el.loginScreen = document.getElementById('loginScreen');
+        el.loginForm = document.getElementById('loginForm');
+        el.loginEmail = document.getElementById('loginEmail');
+        el.loginPassword = document.getElementById('loginPassword');
+        el.loginBtn = document.getElementById('loginBtn');
+        el.loginError = document.getElementById('loginError');
+        el.dashboardContent = document.getElementById('dashboardContent');
+        el.signedInBox = document.getElementById('signedInBox');
+        el.signedInName = document.getElementById('signedInName');
+        el.signOutBtn = document.getElementById('signOutBtn');
 
         el.filterState = document.getElementById('filterState');
         el.filterLine = document.getElementById('filterLine');
@@ -123,6 +129,11 @@
         el.funnelContainer = document.getElementById('funnelContainer');
         el.frictionTableBody = document.getElementById('frictionTableBody');
         el.quickExitSeconds = document.getElementById('quickExitSeconds');
+        el.pricingIntro = document.getElementById('pricingIntro');
+        el.pricingTableBody = document.getElementById('pricingTableBody');
+        el.pricingFootnote = document.getElementById('pricingFootnote');
+        el.agentKpiRow = document.getElementById('agentKpiRow');
+        el.agentTableBody = document.getElementById('agentTableBody');
 
         el.queueStatus = document.getElementById('queueStatus');
         el.queueTableBody = document.getElementById('queueTableBody');
@@ -171,9 +182,18 @@
         el.refreshBtn.addEventListener('click', refresh);
         el.queueStatus.addEventListener('change', renderQueue);
 
-        el.actingAs.addEventListener('change', function () {
-            try { localStorage.setItem('valentActingAs', el.actingAs.value); } catch (e) { /* storage unavailable */ }
-            updateActionButtons();
+        el.loginForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            signIn();
+        });
+        el.signOutBtn.addEventListener('click', signOut);
+
+        // Uploaded files need the sign-in token, so they're fetched here instead of by a plain link
+        el.appDetailModalBody.addEventListener('click', function (e) {
+            var link = e.target.closest('a[data-download]');
+            if (!link) return;
+            e.preventDefault();
+            downloadFile(link.getAttribute('data-download'), link.textContent);
         });
 
         el.appActionButtons.forEach(function (btn) {
@@ -189,13 +209,7 @@
 
     // Resolves with the parsed JSON body; rejects with an Error whose message can be shown on screen
     function apiRequest(method, path, body) {
-        return fetch(API_BASE_URL + path, {
-            method: method,
-            headers: body ? { 'Content-Type': 'application/json' } : {},
-            body: body ? JSON.stringify(body) : undefined
-        }).catch(function () {
-            throw new Error('Can\'t reach the API at ' + API_BASE_URL + '. Start it with "dotnet run" in the API folder, then click Refresh.');
-        }).then(function (response) {
+        return authorizedFetch(method, path, body).then(function (response) {
             return response.text().then(function (text) {
                 var data = text ? JSON.parse(text) : null;
                 if (!response.ok) {
@@ -206,24 +220,125 @@
         });
     }
 
-    function loadStaff() {
-        apiRequest('GET', '/staff').then(function (staff) {
-            var saved = null;
-            try { saved = localStorage.getItem('valentActingAs'); } catch (e) { /* storage unavailable */ }
-
-            staff.forEach(function (s) {
-                var label = s.firstName + ' ' + s.lastName + (s.role === 'admin' ? ' (admin)' : '');
-                el.actingAs.appendChild(new Option(label, String(s.staffId)));
-            });
-            if (saved && staff.some(function (s) { return String(s.staffId) === saved; })) {
-                el.actingAs.value = saved;
-            }
-            if (staff.length === 0) {
-                el.actingAs.options[0].textContent = 'No agents - run 03_mock_data.sql';
-            }
-            updateActionButtons();
+    // fetch() with the JSON body and sign-in token. A 401 means the session ended (expired,
+    // signed out elsewhere, or account turned off), so it goes back to the sign-in screen.
+    function authorizedFetch(method, path, body) {
+        var headers = body ? { 'Content-Type': 'application/json' } : {};
+        if (session) headers.Authorization = 'Bearer ' + session.token;
+        return fetch(API_BASE_URL + path, {
+            method: method,
+            headers: headers,
+            body: body ? JSON.stringify(body) : undefined
         }).catch(function () {
-            // refresh() shows the connection error
+            throw new Error('Can\'t reach the API at ' + API_BASE_URL + '. Start it with "dotnet run" in the API folder, then click Refresh.');
+        }).then(function (response) {
+            if (response.status === 401 && session) {
+                endSession('Your session ended. Please sign in again.');
+                throw new Error('Please sign in again.');
+            }
+            return response;
+        });
+    }
+
+    // ---------------------------------------------------------------
+    // SIGN IN / OUT
+    // ---------------------------------------------------------------
+
+    function restoreSession() {
+        try { session = JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch (e) { session = null; }
+        if (!session) {
+            showLogin();
+            return;
+        }
+        // Make sure the saved token still works before showing any data
+        apiRequest('GET', '/auth/me').then(function (staff) {
+            session.staff = staff;
+            showDashboard();
+        }).catch(function (err) {
+            if (session) showLogin(err.message); // API unreachable; a 401 already showed the sign-in screen
+        });
+    }
+
+    function signIn() {
+        el.loginError.classList.add('d-none');
+        if (!el.loginForm.checkValidity()) {
+            el.loginForm.classList.add('was-validated');
+            return;
+        }
+        el.loginBtn.disabled = true;
+        el.loginBtn.textContent = 'Signing in…';
+        apiRequest('POST', '/auth/login', {
+            email: el.loginEmail.value,
+            password: el.loginPassword.value
+        }).then(function (result) {
+            session = { token: result.token, staff: result.staff };
+            try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch (e) { /* storage unavailable: signed in for this page only */ }
+            el.loginPassword.value = '';
+            el.loginForm.classList.remove('was-validated');
+            showDashboard();
+        }).catch(function (err) {
+            showLogin(err.message);
+        }).then(function () {
+            el.loginBtn.disabled = false;
+            el.loginBtn.textContent = 'Sign in';
+        });
+    }
+
+    function signOut() {
+        var current = session;
+        endSession();
+        if (current) {
+            // Tell the server too, so the token stops working right away
+            fetch(API_BASE_URL + '/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + current.token } })
+                .catch(function () { /* already signed out locally */ });
+        }
+    }
+
+    // Forget the token and hide all data
+    function endSession(message) {
+        session = null;
+        try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* storage unavailable */ }
+        var modal = bootstrap.Modal.getInstance(el.appDetailModalEl);
+        if (modal) modal.hide();
+        dashboard = null;
+        applications = [];
+        showLogin(message);
+    }
+
+    function showLogin(message) {
+        el.dashboardContent.classList.add('d-none');
+        el.signedInBox.classList.add('d-none');
+        el.loginScreen.classList.remove('d-none');
+        el.loginError.textContent = message || '';
+        el.loginError.classList.toggle('d-none', !message);
+        el.loginEmail.focus();
+    }
+
+    function showDashboard() {
+        el.loginScreen.classList.add('d-none');
+        el.dashboardContent.classList.remove('d-none');
+        el.signedInBox.classList.remove('d-none');
+        el.signedInName.textContent = session.staff.firstName + ' ' + session.staff.lastName +
+            (session.staff.role === 'admin' ? ' (admin)' : '');
+        refresh();
+    }
+
+    function downloadFile(path, fileName) {
+        authorizedFetch('GET', path).then(function (response) {
+            if (!response.ok) throw new Error('Couldn\'t download the file (HTTP ' + response.status + ').');
+            return response.blob();
+        }).then(function (blob) {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        }).catch(function (err) {
+            el.appActionError.textContent = err.message;
+            el.appActionError.classList.remove('d-none');
         });
     }
 
@@ -258,6 +373,8 @@
         renderKpis();
         renderFunnel();
         renderFrictionTable();
+        renderPricing();
+        renderAgentUsage();
         renderQueue();
         el.quickExitSeconds.textContent = dashboard.quickExitSeconds;
     }
@@ -280,7 +397,11 @@
             { label: 'Avg. Time to Submit', value: d.avgMinutesToSubmit === null ? '—' : formatMinutes(d.avgMinutesToSubmit), caption: 'Start of application to submit' }
         ];
 
-        el.kpiRow.innerHTML = tiles.map(function (t) {
+        el.kpiRow.innerHTML = kpiTilesHtml(tiles);
+    }
+
+    function kpiTilesHtml(tiles) {
+        return tiles.map(function (t) {
             return (
                 '<div class="col-6 col-md-4 col-lg">' +
                     '<div class="kpi-tile">' +
@@ -291,6 +412,72 @@
                 '</div>'
             );
         }).join('');
+    }
+
+    // Min / max / average demo estimate per line (pricing in GET /api/dashboard)
+    function renderPricing() {
+        var p = dashboard.pricing;
+        el.pricingIntro.textContent = 'Yearly price ranges customers were shown on the Quote step, for the ' +
+            p.quotedApplications + ' application' + (p.quotedApplications === 1 ? '' : 's') +
+            ' matching the filters that reached it. Recalculated with the current demo rates.';
+
+        if (p.error) {
+            el.pricingTableBody.innerHTML = '<tr><td colspan="5" class="text-danger small">' + escapeHtml(p.error) + '</td></tr>';
+            el.pricingFootnote.textContent = '';
+            return;
+        }
+
+        var rows = Object.keys(LINE_LABELS).map(function (code) {
+            return p.lines.filter(function (l) { return l.lineCode === code; })[0];
+        }).filter(Boolean);
+        el.pricingTableBody.innerHTML = rows.length === 0
+            ? '<tr><td colspan="5" class="text-muted small">No estimates yet for these filters.</td></tr>'
+            : rows.map(function (l) {
+                return '<tr>' +
+                    '<td class="fw-semibold">' + LINE_LABELS[l.lineCode] + '</td>' +
+                    '<td>' + l.estimates + '</td>' +
+                    '<td>' + formatMoney(l.min) + '</td>' +
+                    '<td>' + formatMoney(l.max) + '</td>' +
+                    '<td>' + moneyRange(l.avgLow, l.avgHigh) + '</td>' +
+                '</tr>';
+            }).join('');
+
+        var notPriced = [];
+        if (p.referredLines > 0) notPriced.push(p.referredLines + ' needed a specialist to price');
+        if (p.incompleteLines > 0) notPriced.push(p.incompleteLines + ' were missing answers');
+        el.pricingFootnote.textContent =
+            'National-average ballpark' + (p.ruleVersion ? ' (' + p.ruleVersion + ')' : '') +
+            ', not adjusted for state and not real quotes. Lowest = smallest low end; highest = largest high end. ' +
+            'Bundles count once per line.' + (notPriced.length ? ' Not included: ' + notPriced.join(', ') + '.' : '');
+    }
+
+    // How often agents are needed, and each agent's activity (agents in GET /api/dashboard)
+    function renderAgentUsage() {
+        var a = dashboard.agents;
+        var handled = percent(a.handledByAgent, a.submitted);
+        var escalated = percent(a.escalated, a.submitted);
+        var referred = dashboard.pricing.referredLines;
+        el.agentKpiRow.innerHTML = kpiTilesHtml([
+            { label: 'Handled by an Agent', value: handled === null ? '—' : handled + '%', caption: a.handledByAgent + ' of ' + a.submitted + ' submitted applications' },
+            { label: 'Escalated', value: escalated === null ? '—' : escalated + '%', caption: a.escalated + ' sent to a specialist or supervisor' },
+            { label: 'Needed Specialist Pricing', value: referred, caption: 'Quote lines the demo couldn’t price' },
+            { label: 'Active Agents', value: a.staff.length, caption: 'Made at least one status change' }
+        ]);
+
+        el.agentTableBody.innerHTML = a.staff.length === 0
+            ? '<tr><td colspan="7" class="text-muted small">No agent activity for these filters.</td></tr>'
+            : a.staff.map(function (s) {
+                return '<tr>' +
+                    '<td class="fw-semibold">' + escapeHtml(s.name) +
+                        (s.role === 'admin' ? ' <span class="badge text-bg-secondary ms-1">Admin</span>' : '') + '</td>' +
+                    '<td>' + s.actions + '</td>' +
+                    '<td>' + s.applications + '</td>' +
+                    '<td>' + s.approved + '</td>' +
+                    '<td>' + s.rejected + '</td>' +
+                    '<td>' + s.escalated + '</td>' +
+                    '<td>' + timeAgo(s.lastActive) + '</td>' +
+                '</tr>';
+            }).join('');
     }
 
     // One entry per funnel stage with counts and drop-off from the previous stage
@@ -540,6 +727,11 @@
             openApp = app;
             renderAppDetail(app);
             updateActionButtons();
+            return apiRequest('GET', '/applications/' + id + '/quote').then(function (quote) {
+                if (openAppId === id) renderQuoteSummary(quote);
+            }, function (err) {
+                if (openAppId === id) document.getElementById('appQuote').textContent = err.message;
+            });
         }).catch(function (err) {
             if (openAppId !== id) return;
             el.appDetailModalBody.innerHTML = '<div class="alert alert-danger small mb-0">' + escapeHtml(err.message) + '</div>';
@@ -562,7 +754,15 @@
                 (app.rejectionReason ? detailRow('Rejection reason', escapeHtml(app.rejectionReason)) : '') +
             '</dl>';
 
-        var answerKeys = Object.keys(app.answers);
+        html += '<h6 class="detail-heading">Demo Estimate <span class="badge mock-badge ms-1">NOT A REAL QUOTE</span></h6>' +
+            '<div class="small mb-3" id="appQuote"><span class="text-muted">Calculating…</span></div>';
+
+        html += currentPolicyHtml(app);
+
+        // The current-policy answers are shown in their own section above
+        var answerKeys = Object.keys(app.answers).filter(function (key) {
+            return CURRENT_POLICY_FIELDS.indexOf(key) === -1;
+        });
         if (answerKeys.length > 0) {
             html += '<h6 class="detail-heading">Answers</h6><dl class="row small mb-3">' +
                 answerKeys.map(function (key) {
@@ -595,6 +795,52 @@
         el.appDetailModalBody.innerHTML = html;
     }
 
+    var CURRENT_POLICY_FIELDS = ['current_insurer', 'current_policy_end'];
+
+    // Who the customer is switching from, when that policy ends, and the uploaded
+    // declarations page. Empty unless they answered "yes" to switching.
+    function currentPolicyHtml(app) {
+        if (app.answers.switching_carrier !== 'yes') return '';
+        var doc = app.documents.filter(function (d) { return d.docType === 'current_policy'; })[0];
+        var fileHtml = doc
+            ? '<a href="#" data-download="/applications/' + app.applicationId + '/documents/' + doc.documentId + '">' +
+                  escapeHtml(doc.fileName) + '</a> <span class="text-muted">(' + formatFileSize(doc.sizeBytes) +
+                  ', uploaded ' + formatDateTime(doc.uploadedAt) + ')</span>'
+            : '<span class="text-muted">Not uploaded &mdash; ask the customer for it if needed</span>';
+        return '<h6 class="detail-heading">Current Policy (switching)</h6>' +
+            '<dl class="row small mb-3">' +
+                detailRow('Current insurer', escapeHtml(app.answers.current_insurer || '—')) +
+                detailRow('Current policy ends', escapeHtml(app.answers.current_policy_end || '—')) +
+                detailRow('Declarations page', fileHtml) +
+            '</dl>';
+    }
+
+    function formatFileSize(bytes) {
+        return bytes >= 1024 * 1024 ? (bytes / (1024 * 1024)).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
+    }
+
+    // Same demo estimate the customer sees on the Quote step (GET /api/applications/{id}/quote)
+    function renderQuoteSummary(quote) {
+        var QUOTE_STATUS = { DEMO_ESTIMATE: 'Estimate', INCOMPLETE: 'Needs more info', REFERRED: 'Specialist to price' };
+        var html = quote.totalLow !== null
+            ? '<p class="mb-1"><strong>Total: ' + moneyRange(quote.totalLow, quote.totalHigh) + ' / year</strong></p>'
+            : '';
+        html += '<ul class="list-unstyled mb-1">' + quote.lines.map(function (line) {
+            var value = line.low !== null ? moneyRange(line.low, line.high) + ' / year' : QUOTE_STATUS[line.status] || line.status;
+            var extra = line.missing.length > 0
+                ? 'Missing: ' + line.missing.map(function (m) { return m.label; }).join(', ')
+                : line.basis.concat(line.notes).join(' · ');
+            return '<li><strong>' + (LINE_LABELS[line.lineCode] || escapeHtml(line.lineCode)) + ':</strong> ' + escapeHtml(value) +
+                (extra ? '<div class="text-muted">' + escapeHtml(extra) + '</div>' : '') + '</li>';
+        }).join('') + '</ul>';
+        html += '<div class="text-muted">National-average ballpark (' + escapeHtml(quote.ruleVersion) + '), not adjusted for state.</div>';
+        document.getElementById('appQuote').innerHTML = html;
+    }
+
+    function moneyRange(low, high) {
+        return formatMoney(low) + ' – ' + formatMoney(high);
+    }
+
     function itemsHtml(title, items, describe) {
         if (!items || items.length === 0) return '';
         return '<h6 class="detail-heading">' + title + '</h6><ol class="small mb-3 ps-3">' +
@@ -618,7 +864,7 @@
     }
 
     function updateActionButtons() {
-        var agentChosen = !!el.actingAs.value;
+        var agentChosen = !!session;
         var canAct = openApp && OPEN_STATUSES.indexOf(openApp.status) !== -1;
 
         el.appActionButtons.forEach(function (btn) {
@@ -630,10 +876,8 @@
             el.appActionHint.textContent = '';
         } else if (!canAct) {
             el.appActionHint.textContent = 'This application is ' + STATUS_META[openApp.status].label.toLowerCase() + ' — no further actions.';
-        } else if (!agentChosen) {
-            el.appActionHint.textContent = 'Choose who you\'re acting as (top right) to make changes.';
-        } else {
-            el.appActionHint.textContent = 'Acting as ' + el.actingAs.options[el.actingAs.selectedIndex].text + '.';
+        } else if (agentChosen) {
+            el.appActionHint.textContent = 'Changes are saved as ' + session.staff.firstName + ' ' + session.staff.lastName + '.';
         }
     }
 
@@ -644,7 +888,6 @@
 
         apiRequest('PUT', '/applications/' + id + '/status', {
             status: newStatus,
-            staffId: parseInt(el.actingAs.value, 10),
             note: el.appActionNote.value
         }).then(function () {
             el.appActionNote.value = '';

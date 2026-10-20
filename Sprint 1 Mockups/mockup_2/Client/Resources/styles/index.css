@@ -273,10 +273,7 @@ body {
 .queue-status-denied { background-color: #e9ecef; color: var(--ink-secondary); }
 .queue-status-new { background-color: #e0ecfa; color: #1c4f8a; }
 
-/* ---------------- Agent picker + application detail ---------------- */
-.acting-as-select {
-    min-width: 12rem;
-}
+/* ---------------- Application detail ---------------- */
 .detail-heading {
     font-size: 0.8rem;
     font-weight: 700;

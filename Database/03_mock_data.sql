@@ -10,8 +10,10 @@
 --   * Behavior-analytics events (step views, time on step, exits, validation
 --     errors) for those applications, so the agent dashboard has data
 --
--- Everything is FAKE: names, @example.com emails, 555-01xx phone numbers.
--- Staff password_hash is NULL because there is no login system yet.
+-- Everything is FAKE: names, @example.com emails, 555-01xx phone numbers, insurer names.
+-- Every mock staff account signs in to the dashboard with the DEMO password
+-- ValentDemo2026! (stored only as @demo_hash below). Demo accounts only:
+-- real accounts need their own password (see API/README.md).
 -- Dates are relative to NOW(), so the data always looks recent.
 -- =====================================================================
 
@@ -52,18 +54,21 @@ DROP TEMPORARY TABLE mock_apps;
 -- ---------------------------------------------------------------------
 -- Insert or refresh. Staff rows are never deleted because real test
 -- applications may already be assigned to them.
+-- @demo_hash = PBKDF2 hash of the demo password, made with: dotnet run -- hash-password "ValentDemo2026!"
+SET @demo_hash = 'AQAAAAIAAYagAAAAEAUWjGDemw6lbHLAeIAya/D7uSCP/K6zw6PyMDubrPYfGdLTbUdXdtj6rV56w5heEQ==';
 
 INSERT INTO staff_users (email, first_name, last_name, password_hash, role, is_active) VALUES
-('morgan.ellis@valentpartners.example',  'Morgan', 'Ellis',    NULL, 'admin',    TRUE),
-('casey.patel@valentpartners.example',   'Casey',  'Patel',    NULL, 'employee', TRUE),
-('drew.thompson@valentpartners.example', 'Drew',   'Thompson', NULL, 'employee', TRUE),
-('riley.brooks@valentpartners.example',  'Riley',  'Brooks',   NULL, 'employee', TRUE),
-('avery.kim@valentpartners.example',     'Avery',  'Kim',      NULL, 'employee', FALSE)
+('morgan.ellis@valentpartners.example',  'Morgan', 'Ellis',    @demo_hash, 'admin',    TRUE),
+('casey.patel@valentpartners.example',   'Casey',  'Patel',    @demo_hash, 'employee', TRUE),
+('drew.thompson@valentpartners.example', 'Drew',   'Thompson', @demo_hash, 'employee', TRUE),
+('riley.brooks@valentpartners.example',  'Riley',  'Brooks',   @demo_hash, 'employee', TRUE),
+('avery.kim@valentpartners.example',     'Avery',  'Kim',      @demo_hash, 'employee', FALSE)
 ON DUPLICATE KEY UPDATE
   first_name = VALUES(first_name),
   last_name  = VALUES(last_name),
   role       = VALUES(role),
-  is_active  = VALUES(is_active);
+  is_active  = VALUES(is_active),
+  password_hash = VALUES(password_hash);
 
 -- ---------------------------------------------------------------------
 -- 3. Helper procedures (dropped again at the end of this script)
@@ -230,8 +235,12 @@ SET @start2 = DATE_FORMAT(CURDATE() + INTERVAL 30 DAY, '%Y-%m-%d');
 
 CALL mock_application('Jordan', 'Rivera', 'jordan.rivera@example.com', '(205) 555-0101', 'AL', 'HOME,AUTO', 'submitted', 5, 0, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '370000');
+CALL mock_answer(@app, 1, 'auto_coverage', 'full');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,B,C,D,E,F');
-CALL mock_answer(@app, 1, 'currently_insured_auto', 'yes');
+CALL mock_answer(@app, 1, 'switching_carrier', 'yes');
+CALL mock_answer(@app, 1, 'current_insurer', 'Example Mutual Insurance');
+CALL mock_answer(@app, 1, 'current_policy_end', DATE_FORMAT(CURDATE() + INTERVAL 15 DAY, '%Y-%m-%d'));
 CALL mock_home(@app, '418 Magnolia Ave', 'Tuscaloosa', '35401', 'single_family', 1998, 2100);
 CALL mock_answer(@app, 2, 'recent_incidents', 'no');
 CALL mock_vehicle(@app, 1, 2019, 'Toyota', 'Camry', 'commute', 12000, '35401', 'owned');
@@ -239,10 +248,13 @@ CALL mock_vehicle(@app, 2, 2022, 'Honda', 'CR-V', 'pleasure', 8000, '35401', 'fi
 CALL mock_driver(@app, 1, 'Jordan', 'Rivera', 'self', 15, 1);
 CALL mock_driver(@app, 2, 'Sam', 'Rivera', 'spouse', 12, 2);
 
-CALL mock_application('Grace', 'Liu', 'grace.liu@example.com', '(813) 555-0102', 'FL', 'HOME,FLOOD', 'submitted', 5, 1, NULL, NULL, @app);
+CALL mock_application('Grace', 'Liu', 'grace.liu@example.com', '(251) 555-0102', 'AL', 'HOME,FLOOD', 'submitted', 5, 1, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start2);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '320000');
+CALL mock_answer(@app, 1, 'flood_building_coverage', '250000');
+CALL mock_answer(@app, 1, 'flood_contents_coverage', '100000');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,B,C,E');
-CALL mock_home(@app, '2207 Bayshore Ct', 'Tampa', '33611', 'single_family', 2004, 1850);
+CALL mock_home(@app, '2207 Bayshore Ct', 'Daphne', '36526', 'single_family', 2004, 1850);
 CALL mock_answer(@app, 2, 'flood_zone', 'A');
 CALL mock_answer(@app, 2, 'has_basement', 'no');
 
@@ -251,16 +263,18 @@ CALL mock_answer(@app, 1, 'start_date', @start1);
 CALL mock_jewelry(@app, 1, 'ring', 8500, '1.2 ct diamond engagement ring, platinum band', 'yes', 40);
 CALL mock_jewelry(@app, 2, 'watch', 3200, 'Stainless steel automatic watch', 'no', NULL);
 
-CALL mock_application('Ben', 'Carter', 'ben.carter@example.com', '(919) 555-0104', 'NC', 'HOME', 'submitted', 5, 2, NULL, NULL, @app);
+CALL mock_application('Ben', 'Carter', 'ben.carter@example.com', '(518) 555-0104', 'NY', 'HOME', 'submitted', 5, 2, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start2);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '280000');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,C,E');
-CALL mock_home(@app, '57 Oak Hollow Rd', 'Raleigh', '27606', 'townhouse', 2012, 1600);
+CALL mock_home(@app, '57 Oak Hollow Rd', 'Albany', '12203', 'townhouse', 2012, 1600);
 
-CALL mock_application('Noah', 'Fischer', 'noah.fischer@example.com', '(615) 555-0105', 'TN', 'AUTO', 'submitted', 5, 1, NULL, NULL, @app);
+CALL mock_application('Noah', 'Fischer', 'noah.fischer@example.com', '(512) 555-0105', 'TX', 'AUTO', 'submitted', 5, 1, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
-CALL mock_answer(@app, 1, 'currently_insured_auto', 'no');
+CALL mock_answer(@app, 1, 'auto_coverage', 'liability');
+CALL mock_answer(@app, 1, 'switching_carrier', 'no');
 CALL mock_answer(@app, 2, 'recent_incidents', 'yes');
-CALL mock_vehicle(@app, 1, 2016, 'Ford', 'F-150', 'business', 18000, '37203', 'owned');
+CALL mock_vehicle(@app, 1, 2016, 'Ford', 'F-150', 'business', 18000, '78701', 'owned');
 CALL mock_driver(@app, 1, 'Noah', 'Fischer', 'self', 6, 1);
 
 -- ---------------------------------------------------------------------
@@ -269,20 +283,25 @@ CALL mock_driver(@app, 1, 'Noah', 'Fischer', 'self', 6, 1);
 
 CALL mock_application('Marcus', 'Bell', 'marcus.bell@example.com', '(512) 555-0106', 'TX', 'AUTO', 'under_review', 5, 1, 'riley.brooks@valentpartners.example', NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
-CALL mock_answer(@app, 1, 'currently_insured_auto', 'yes');
+CALL mock_answer(@app, 1, 'auto_coverage', 'full');
+CALL mock_answer(@app, 1, 'switching_carrier', 'yes');
+CALL mock_answer(@app, 1, 'current_insurer', 'Sample Casualty Co.');
+CALL mock_answer(@app, 1, 'current_policy_end', DATE_FORMAT(CURDATE() + INTERVAL 26 DAY, '%Y-%m-%d'));
 CALL mock_answer(@app, 2, 'recent_incidents', 'yes');
 CALL mock_vehicle(@app, 1, 2020, 'Chevrolet', 'Malibu', 'commute', 15000, '78704', 'financed');
 CALL mock_driver(@app, 1, 'Marcus', 'Bell', 'self', 9, 1);
 CALL mock_driver(@app, 2, 'Tia', 'Bell', 'child', 1, 1);
 
-CALL mock_application('Aisha', 'Mohammed', 'aisha.mohammed@example.com', '(504) 555-0107', 'LA', 'FLOOD', 'under_review', 5, 4, 'casey.patel@valentpartners.example', NULL, @app);
+CALL mock_application('Aisha', 'Mohammed', 'aisha.mohammed@example.com', '(409) 555-0107', 'TX', 'FLOOD', 'under_review', 5, 4, 'casey.patel@valentpartners.example', NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start2);
+CALL mock_answer(@app, 1, 'flood_building_coverage', '250000');
+CALL mock_answer(@app, 1, 'flood_contents_coverage', '100000');
 CALL mock_answer(@app, 1, 'has_homeowners_policy', 'yes');
-CALL mock_home(@app, '930 Esplanade Ave', 'New Orleans', '70116', 'single_family', 1925, 1700);
+CALL mock_home(@app, '930 Seawall Blvd', 'Galveston', '77550', 'single_family', 1925, 1700);
 CALL mock_answer(@app, 2, 'flood_zone', 'unknown');
 CALL mock_answer(@app, 2, 'has_basement', 'no');
 
-CALL mock_application('Ella', 'Parker', 'ella.parker@example.com', '(404) 555-0108', 'GA', 'JEWELRY', 'under_review', 5, 2, 'riley.brooks@valentpartners.example', NULL, @app);
+CALL mock_application('Ella', 'Parker', 'ella.parker@example.com', '(205) 555-0108', 'AL', 'JEWELRY', 'under_review', 5, 2, 'riley.brooks@valentpartners.example', NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
 CALL mock_jewelry(@app, 1, 'necklace', 4100, 'Gold pendant necklace with sapphire', 'yes', 200);
 CALL mock_jewelry(@app, 2, 'earrings', 1900, 'Diamond stud earrings, 0.5 ct total', 'no', NULL);
@@ -292,26 +311,34 @@ CALL mock_jewelry(@app, 3, 'bracelet', 2600, 'White gold tennis bracelet', 'yes'
 -- 6. Escalated to a specialist / supervisor
 -- ---------------------------------------------------------------------
 
-CALL mock_application('Priya', 'Shah', 'priya.shah@example.com', '(305) 555-0109', 'FL', 'FLOOD', 'escalated', 5, 2, 'casey.patel@valentpartners.example', 'Coastal Zone VE property - needs flood specialist review', @app);
+CALL mock_application('Priya', 'Shah', 'priya.shah@example.com', '(251) 555-0109', 'AL', 'FLOOD', 'escalated', 5, 2, 'casey.patel@valentpartners.example', 'Coastal Zone VE property - needs flood specialist review', @app);
 CALL mock_answer(@app, 1, 'start_date', @start2);
+CALL mock_answer(@app, 1, 'flood_building_coverage', '190000');
+CALL mock_answer(@app, 1, 'flood_contents_coverage', '50000');
 CALL mock_answer(@app, 1, 'has_homeowners_policy', 'yes');
-CALL mock_home(@app, '1440 Ocean Dr', 'Miami Beach', '33139', 'condo', 1987, 1100);
+CALL mock_home(@app, '1440 W Beach Blvd', 'Gulf Shores', '36542', 'condo', 1987, 1100);
 CALL mock_answer(@app, 2, 'flood_zone', 'V');
 CALL mock_answer(@app, 2, 'has_basement', 'no');
 
-CALL mock_application('Elena', 'Novak', 'elena.novak@example.com', '(415) 555-0110', 'CA', 'JEWELRY', 'escalated', 5, 3, 'riley.brooks@valentpartners.example', 'High-value ring - supervisor sign-off requested', @app);
+CALL mock_application('Elena', 'Novak', 'elena.novak@example.com', '(917) 555-0110', 'NY', 'JEWELRY', 'escalated', 5, 3, 'riley.brooks@valentpartners.example', 'High-value ring - supervisor sign-off requested', @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
 CALL mock_jewelry(@app, 1, 'ring', 32000, '3 ct emerald-cut diamond ring, platinum', 'yes', 90);
 
-CALL mock_application('Chloe', 'Martin', 'chloe.martin@example.com', '(850) 555-0111', 'FL', 'HOME,FLOOD,AUTO', 'escalated', 5, 5, 'morgan.ellis@valentpartners.example', 'Three-line bundle in a coastal area - specialist review requested', @app);
+CALL mock_application('Chloe', 'Martin', 'chloe.martin@example.com', '(251) 555-0111', 'AL', 'HOME,FLOOD,AUTO', 'escalated', 5, 5, 'morgan.ellis@valentpartners.example', 'Three-line bundle in a coastal area - specialist review requested', @app);
 CALL mock_answer(@app, 1, 'start_date', @start2);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '420000');
+CALL mock_answer(@app, 1, 'flood_building_coverage', '250000');
+CALL mock_answer(@app, 1, 'flood_contents_coverage', '100000');
+CALL mock_answer(@app, 1, 'auto_coverage', 'full');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,B,C,D,E');
-CALL mock_answer(@app, 1, 'currently_insured_auto', 'yes');
-CALL mock_home(@app, '12 Gulf Breeze Pkwy', 'Pensacola', '32507', 'single_family', 2008, 2400);
+CALL mock_answer(@app, 1, 'switching_carrier', 'yes');
+CALL mock_answer(@app, 1, 'current_insurer', 'Demo Auto Insurance');
+CALL mock_answer(@app, 1, 'current_policy_end', DATE_FORMAT(CURDATE() + INTERVAL 37 DAY, '%Y-%m-%d'));
+CALL mock_home(@app, '12 Perdido Beach Blvd', 'Orange Beach', '36561', 'single_family', 2008, 2400);
 CALL mock_answer(@app, 2, 'flood_zone', 'A');
 CALL mock_answer(@app, 2, 'has_basement', 'no');
 CALL mock_answer(@app, 2, 'recent_incidents', 'no');
-CALL mock_vehicle(@app, 1, 2021, 'Subaru', 'Outback', 'commute', 11000, '32507', 'financed');
+CALL mock_vehicle(@app, 1, 2021, 'Subaru', 'Outback', 'commute', 11000, '36561', 'financed');
 CALL mock_driver(@app, 1, 'Chloe', 'Martin', 'self', 20, 1);
 
 -- ---------------------------------------------------------------------
@@ -320,13 +347,18 @@ CALL mock_driver(@app, 1, 'Chloe', 'Martin', 'self', 20, 1);
 
 CALL mock_application('Samuel', 'Okoro', 'samuel.okoro@example.com', '(256) 555-0112', 'AL', 'HOME', 'approved', 5, 6, 'casey.patel@valentpartners.example', 'Approved - property details verified', @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '460000');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,B,C,E,F');
 CALL mock_home(@app, '305 Pine Ridge Dr', 'Huntsville', '35801', 'single_family', 2015, 2600);
 
 CALL mock_application('Luis', 'Ortega', 'luis.ortega@example.com', '(210) 555-0113', 'TX', 'HOME,AUTO', 'approved', 5, 12, 'drew.thompson@valentpartners.example', 'Approved - bundle confirmed with customer', @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '390000');
+CALL mock_answer(@app, 1, 'auto_coverage', 'full');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,B,C,D,E,F');
-CALL mock_answer(@app, 1, 'currently_insured_auto', 'yes');
+CALL mock_answer(@app, 1, 'switching_carrier', 'yes');
+CALL mock_answer(@app, 1, 'current_insurer', 'Placeholder Insurance Group');
+CALL mock_answer(@app, 1, 'current_policy_end', DATE_FORMAT(CURDATE() + INTERVAL 48 DAY, '%Y-%m-%d'));
 CALL mock_home(@app, '8812 Mesquite Trl', 'San Antonio', '78249', 'single_family', 2001, 2200);
 CALL mock_answer(@app, 2, 'recent_incidents', 'no');
 CALL mock_vehicle(@app, 1, 2018, 'Nissan', 'Altima', 'commute', 14000, '78249', 'owned');
@@ -336,39 +368,50 @@ CALL mock_application('Olivia', 'Grant', 'olivia.grant@example.com', '(334) 555-
 CALL mock_answer(@app, 1, 'start_date', @start1);
 CALL mock_jewelry(@app, 1, 'ring', 6200, 'Vintage sapphire ring, yellow gold', 'yes', 120);
 
-CALL mock_application('Maya', 'Johnson', 'maya.johnson@example.com', '(228) 555-0115', 'MS', 'FLOOD', 'approved', 5, 25, 'casey.patel@valentpartners.example', 'Approved - flood zone confirmed', @app);
+CALL mock_application('Maya', 'Johnson', 'maya.johnson@example.com', '(361) 555-0115', 'TX', 'FLOOD', 'approved', 5, 25, 'casey.patel@valentpartners.example', 'Approved - flood zone confirmed', @app);
 CALL mock_answer(@app, 1, 'start_date', @start2);
+CALL mock_answer(@app, 1, 'flood_building_coverage', '250000');
+CALL mock_answer(@app, 1, 'flood_contents_coverage', '100000');
 CALL mock_answer(@app, 1, 'has_homeowners_policy', 'yes');
-CALL mock_home(@app, '77 Beach Blvd', 'Biloxi', '39530', 'single_family', 1995, 1500);
+CALL mock_home(@app, '77 Ocean Dr', 'Corpus Christi', '78404', 'single_family', 1995, 1500);
 CALL mock_answer(@app, 2, 'flood_zone', 'A');
 CALL mock_answer(@app, 2, 'has_basement', 'no');
 
-CALL mock_application('Ava', 'Ramirez', 'ava.ramirez@example.com', '(407) 555-0116', 'FL', 'HOME', 'approved', 5, 45, 'casey.patel@valentpartners.example', 'Approved', @app);
+CALL mock_application('Ava', 'Ramirez', 'ava.ramirez@example.com', '(516) 555-0116', 'NY', 'HOME', 'approved', 5, 45, 'casey.patel@valentpartners.example', 'Approved', @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '310000');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,B,C,E');
-CALL mock_home(@app, '2650 Lake Nona Blvd', 'Orlando', '32827', 'townhouse', 2017, 1750);
+CALL mock_home(@app, '26 Lakeview Ave', 'Massapequa', '11758', 'townhouse', 2017, 1750);
 
-CALL mock_application('Leo', 'Bennett', 'leo.bennett@example.com', '(704) 555-0117', 'NC', 'AUTO', 'approved', 5, 60, 'riley.brooks@valentpartners.example', 'Approved', @app);
+CALL mock_application('Leo', 'Bennett', 'leo.bennett@example.com', '(585) 555-0117', 'NY', 'AUTO', 'approved', 5, 60, 'riley.brooks@valentpartners.example', 'Approved', @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
-CALL mock_answer(@app, 1, 'currently_insured_auto', 'yes');
+CALL mock_answer(@app, 1, 'auto_coverage', 'full');
+CALL mock_answer(@app, 1, 'switching_carrier', 'yes');
+CALL mock_answer(@app, 1, 'current_insurer', 'Example Mutual Insurance');
+CALL mock_answer(@app, 1, 'current_policy_end', DATE_FORMAT(CURDATE() + INTERVAL 59 DAY, '%Y-%m-%d'));
 CALL mock_answer(@app, 2, 'recent_incidents', 'no');
-CALL mock_vehicle(@app, 1, 2023, 'Hyundai', 'Tucson', 'commute', 10000, '28202', 'leased');
+CALL mock_vehicle(@app, 1, 2023, 'Hyundai', 'Tucson', 'commute', 10000, '14604', 'leased');
 CALL mock_driver(@app, 1, 'Leo', 'Bennett', 'self', 8, 1);
 
-CALL mock_application('Tyler', 'Henderson', 'tyler.henderson@example.com', '(678) 555-0118', 'GA', 'AUTO', 'rejected', 5, 9, 'drew.thompson@valentpartners.example', 'Could not verify vehicle ownership documents', @app);
+CALL mock_application('Tyler', 'Henderson', 'tyler.henderson@example.com', '(256) 555-0118', 'AL', 'AUTO', 'rejected', 5, 9, 'drew.thompson@valentpartners.example', 'Could not verify vehicle ownership documents', @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
-CALL mock_answer(@app, 1, 'currently_insured_auto', 'no');
+CALL mock_answer(@app, 1, 'auto_coverage', 'full');
+CALL mock_answer(@app, 1, 'switching_carrier', 'no');
 CALL mock_answer(@app, 2, 'recent_incidents', 'yes');
-CALL mock_vehicle(@app, 1, 2014, 'Dodge', 'Charger', 'rideshare', 30000, '30318', 'financed');
+CALL mock_vehicle(@app, 1, 2014, 'Dodge', 'Charger', 'rideshare', 30000, '35801', 'financed');
 CALL mock_driver(@app, 1, 'Tyler', 'Henderson', 'self', 3, 1);
 
-CALL mock_application('Daniel', 'Kim', 'daniel.kim@example.com', '(619) 555-0119', 'CA', 'HOME', 'rejected', 5, 20, 'drew.thompson@valentpartners.example', 'Customer could not provide required property documentation', @app);
+CALL mock_application('Daniel', 'Kim', 'daniel.kim@example.com', '(214) 555-0119', 'TX', 'HOME', 'rejected', 5, 20, 'drew.thompson@valentpartners.example', 'Customer could not provide required property documentation', @app);
 CALL mock_answer(@app, 1, 'start_date', @start2);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '330000');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,B,C');
-CALL mock_home(@app, '4021 Canyon View Dr', 'San Diego', '92117', 'single_family', 1972, 1900);
+CALL mock_home(@app, '4021 Canyon View Dr', 'Dallas', '75214', 'single_family', 1972, 1900);
 
 CALL mock_application('Mia', 'Foster', 'mia.foster@example.com', '(251) 555-0120', 'AL', 'HOME,FLOOD', 'rejected', 5, 75, 'drew.thompson@valentpartners.example', 'Customer withdrew the application', @app);
 CALL mock_answer(@app, 1, 'start_date', @start2);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '210000');
+CALL mock_answer(@app, 1, 'flood_building_coverage', '210000');
+CALL mock_answer(@app, 1, 'flood_contents_coverage', '50000');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,B,C,E');
 CALL mock_home(@app, '19 Dauphin Island Pkwy', 'Mobile', '36605', 'mobile', 1990, 1200);
 CALL mock_answer(@app, 2, 'flood_zone', 'X');
@@ -383,31 +426,42 @@ CALL mock_answer(@app, 2, 'has_basement', 'no');
 -- Still in progress
 CALL mock_application('Ethan', 'Wright', 'ethan.wright@example.com', '(205) 555-0121', 'AL', 'HOME', 'in_progress', 3, 0, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '170000');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,B,C');
 CALL mock_home(@app, '210 University Blvd', 'Tuscaloosa', '35401', 'condo', 2010, 950);
 
 CALL mock_application('Sofia', 'Garcia', 'sofia.garcia@example.com', '(713) 555-0122', 'TX', 'AUTO', 'in_progress', 4, 1, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
-CALL mock_answer(@app, 1, 'currently_insured_auto', 'yes');
+CALL mock_answer(@app, 1, 'auto_coverage', 'liability');
+CALL mock_answer(@app, 1, 'switching_carrier', 'yes');
+CALL mock_answer(@app, 1, 'current_insurer', 'Sample Casualty Co.');
+CALL mock_answer(@app, 1, 'current_policy_end', DATE_FORMAT(CURDATE() + INTERVAL 70 DAY, '%Y-%m-%d'));
 CALL mock_answer(@app, 2, 'recent_incidents', 'no');
 CALL mock_vehicle(@app, 1, 2017, 'Mazda', 'CX-5', 'pleasure', 9000, '77005', 'owned');
 CALL mock_driver(@app, 1, 'Sofia', 'Garcia', 'self', 11, 1);
 
 CALL mock_application('Owen', 'Price', 'owen.price@example.com', '(251) 555-0123', 'AL', 'FLOOD', 'in_progress', 2, 0, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start2);
+CALL mock_answer(@app, 1, 'flood_building_coverage', '250000');
+CALL mock_answer(@app, 1, 'flood_contents_coverage', '100000');
 CALL mock_answer(@app, 1, 'has_homeowners_policy', 'no');
 
 -- Abandoned (two left on the very first step without saving anything)
 CALL mock_application('Wes', 'Lambert', 'wes.lambert@example.com', '(205) 555-0131', 'AL', 'FLOOD', 'abandoned', 1, 6, NULL, NULL, @app);
 CALL mock_application('Ruth', 'Delgado', 'ruth.delgado@example.com', '(956) 555-0132', 'TX', 'HOME,FLOOD', 'abandoned', 1, 3, NULL, NULL, @app);
 
-CALL mock_application('Ryan', 'Cole', 'ryan.cole@example.com', '(904) 555-0124', 'FL', 'FLOOD', 'abandoned', 2, 10, NULL, NULL, @app);
+CALL mock_application('Ryan', 'Cole', 'ryan.cole@example.com', '(409) 555-0124', 'TX', 'FLOOD', 'abandoned', 2, 10, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start2);
+CALL mock_answer(@app, 1, 'flood_building_coverage', '250000');
+CALL mock_answer(@app, 1, 'flood_contents_coverage', '100000');
 CALL mock_answer(@app, 1, 'has_homeowners_policy', 'yes');
 
-CALL mock_application('Lily', 'Evans', 'lily.evans@example.com', '(310) 555-0125', 'CA', 'AUTO', 'abandoned', 2, 4, NULL, NULL, @app);
+CALL mock_application('Lily', 'Evans', 'lily.evans@example.com', '(631) 555-0125', 'NY', 'AUTO', 'abandoned', 2, 4, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
-CALL mock_answer(@app, 1, 'currently_insured_auto', 'yes');
+CALL mock_answer(@app, 1, 'auto_coverage', 'full');
+CALL mock_answer(@app, 1, 'switching_carrier', 'yes');
+CALL mock_answer(@app, 1, 'current_insurer', 'Demo Auto Insurance');
+CALL mock_answer(@app, 1, 'current_policy_end', DATE_FORMAT(CURDATE() + INTERVAL 21 DAY, '%Y-%m-%d'));
 
 CALL mock_application('Caleb', 'Ward', 'caleb.ward@example.com', '(214) 555-0126', 'TX', 'JEWELRY', 'abandoned', 2, 18, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
@@ -416,24 +470,70 @@ CALL mock_application('Zoe', 'Adams', 'zoe.adams@example.com', '(212) 555-0127',
 CALL mock_answer(@app, 1, 'start_date', @start1);
 CALL mock_jewelry(@app, 1, 'watch', 12500, 'Luxury chronograph watch', 'no', NULL);
 
-CALL mock_application('Nora', 'Hughes', 'nora.hughes@example.com', '(337) 555-0128', 'LA', 'HOME', 'abandoned', 3, 21, NULL, NULL, @app);
+CALL mock_application('Nora', 'Hughes', 'nora.hughes@example.com', '(281) 555-0128', 'TX', 'HOME', 'abandoned', 3, 21, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start2);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '290000');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,B,C,D');
-CALL mock_home(@app, '600 Bayou Rd', 'Lafayette', '70501', 'single_family', 1964, 1650);
+CALL mock_home(@app, '600 Calder Ave', 'Beaumont', '77706', 'single_family', 1964, 1650);
 
-CALL mock_application('Isaac', 'Turner', 'isaac.turner@example.com', '(470) 555-0129', 'GA', 'HOME,AUTO', 'abandoned', 4, 8, NULL, NULL, @app);
+CALL mock_application('Isaac', 'Turner', 'isaac.turner@example.com', '(205) 555-0129', 'AL', 'HOME,AUTO', 'abandoned', 4, 8, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '400000');
+CALL mock_answer(@app, 1, 'auto_coverage', 'full');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,B,C,E');
-CALL mock_answer(@app, 1, 'currently_insured_auto', 'yes');
-CALL mock_home(@app, '1150 Peachtree Ln', 'Marietta', '30060', 'single_family', 1999, 2300);
+CALL mock_answer(@app, 1, 'switching_carrier', 'yes');
+CALL mock_answer(@app, 1, 'current_insurer', 'Placeholder Insurance Group');
+CALL mock_answer(@app, 1, 'current_policy_end', DATE_FORMAT(CURDATE() + INTERVAL 32 DAY, '%Y-%m-%d'));
+CALL mock_home(@app, '1150 Valleydale Rd', 'Hoover', '35226', 'single_family', 1999, 2300);
 CALL mock_answer(@app, 2, 'recent_incidents', 'no');
-CALL mock_vehicle(@app, 1, 2019, 'Jeep', 'Grand Cherokee', 'commute', 13000, '30060', 'financed');
+CALL mock_vehicle(@app, 1, 2019, 'Jeep', 'Grand Cherokee', 'commute', 13000, '35226', 'financed');
 CALL mock_driver(@app, 1, 'Isaac', 'Turner', 'self', 17, 1);
 
 CALL mock_application('Jack', 'Simmons', 'jack.simmons@example.com', '(281) 555-0130', 'TX', 'HOME', 'abandoned', 3, 50, NULL, NULL, @app);
 CALL mock_answer(@app, 1, 'start_date', @start1);
+CALL mock_answer(@app, 1, 'dwelling_coverage', '350000');
 CALL mock_answer(@app, 1, 'coverage_components', 'A,B,C');
 CALL mock_home(@app, '4400 Cypress Creek Pkwy', 'Houston', '77068', 'single_family', 1985, 2000);
+
+-- ---------------------------------------------------------------------
+-- 8b. Fill in quote answers the applications above skipped
+-- ---------------------------------------------------------------------
+-- The Quote step (and the dashboard's Estimated Pricing section) needs these
+-- answers. Anyone past a step has answered it, so fill any gaps for mock
+-- applications that got that far. Values are picked from the application_id
+-- so re-running gives the same answers. INSERT IGNORE keeps answers set above
+-- (one answer per application + field). These are customer answers, not prices.
+
+DROP TEMPORARY TABLE IF EXISTS mock_app_lines;
+CREATE TEMPORARY TABLE mock_app_lines AS
+SELECT a.application_id, a.current_step, l.line_code
+FROM applications a
+JOIN analytics_sessions s ON s.customer_id = a.customer_id AND s.session_id LIKE 'mock-sess-%'
+JOIN application_lines al ON al.application_id = a.application_id
+JOIN insurance_lines l ON l.line_id = al.line_id;
+
+-- One INSERT per answer: MySQL can't use a temporary table twice in one query
+INSERT IGNORE INTO application_answers (application_id, step_number, field_key, field_value)
+SELECT application_id, 1, 'dwelling_coverage', ELT(MOD(application_id, 5) + 1, '250000', '300000', '350000', '400000', '450000')
+FROM mock_app_lines WHERE line_code = 'HOME' AND current_step >= 2;
+
+INSERT IGNORE INTO application_answers (application_id, step_number, field_key, field_value)
+SELECT application_id, 1, 'flood_building_coverage', ELT(MOD(application_id, 3) + 1, '250000', '200000', '150000')
+FROM mock_app_lines WHERE line_code = 'FLOOD' AND current_step >= 2;
+
+INSERT IGNORE INTO application_answers (application_id, step_number, field_key, field_value)
+SELECT application_id, 1, 'flood_contents_coverage', ELT(MOD(application_id, 3) + 1, '100000', '50000', '75000')
+FROM mock_app_lines WHERE line_code = 'FLOOD' AND current_step >= 2;
+
+INSERT IGNORE INTO application_answers (application_id, step_number, field_key, field_value)
+SELECT application_id, 2, 'flood_zone', ELT(MOD(application_id, 3) + 1, 'X', 'A', 'unknown')
+FROM mock_app_lines WHERE line_code = 'FLOOD' AND current_step >= 3;
+
+INSERT IGNORE INTO application_answers (application_id, step_number, field_key, field_value)
+SELECT application_id, 1, 'auto_coverage', IF(MOD(application_id, 2) = 0, 'full', 'liability')
+FROM mock_app_lines WHERE line_code = 'AUTO' AND current_step >= 2;
+
+DROP TEMPORARY TABLE mock_app_lines;
 
 -- ---------------------------------------------------------------------
 -- 9. Behavior analytics for the mock applications

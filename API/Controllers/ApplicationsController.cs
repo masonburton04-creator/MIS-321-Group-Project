@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using API.Data;
 using API.Models;
 using API.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MySqlConnector;
 
@@ -12,13 +13,17 @@ namespace API.Controllers;
 //   POST /api/applications                      start a new application (one line or a bundle)
 //   PUT  /api/applications/{id}/steps/{step}    save one step's answers
 //   POST /api/applications/{id}/submit          submit for agent review
-// And for the agent dashboard / testing:
+// And for the agent dashboard (these require a signed-in staff member, see AuthController):
 //   GET  /api/applications                      list applications
 //   GET  /api/applications/{id}                 one application with its answers and history
 //   PUT  /api/applications/{id}/status          agent starts review / approves / rejects / escalates
 // Demo price estimate (customer Quote step, and the agent's detail view):
 //   POST /api/applications/{id}/quote           calculate and save
-//   GET  /api/applications/{id}/quote           calculate only
+//   GET  /api/applications/{id}/quote           calculate only (staff)
+// Current-policy upload (customer step 1; agents download it from the dashboard):
+//   POST   /api/applications/{id}/documents/current-policy   upload or replace (multipart, field "file")
+//   DELETE /api/applications/{id}/documents/current-policy   remove (customer said they aren't switching)
+//   GET    /api/applications/{id}/documents/{documentId}     download (staff)
 [ApiController]
 [Route("api/applications")]
 public class ApplicationsController : ControllerBase
@@ -40,6 +45,18 @@ public class ApplicationsController : ControllerBase
     private static readonly string[] ReviewableStatuses = { "submitted", "under_review", "escalated" };
     private static readonly string[] AgentStatuses = { "under_review", "approved", "rejected", "escalated" };
     private const int MaxNoteLength = 255;
+
+    // Current-policy uploads: PDF or image, checked by extension AND the file's first bytes,
+    // so a renamed file (e.g. a script saved as .pdf) is rejected
+    private const int MaxDocumentBytes = 5 * 1024 * 1024;
+    private const string CurrentPolicyDocType = "current_policy";
+    private static readonly Dictionary<string, (string ContentType, byte[] Signature)> AllowedDocumentTypes = new()
+    {
+        [".pdf"] = ("application/pdf", "%PDF"u8.ToArray()),
+        [".png"] = ("image/png", new byte[] { 0x89, 0x50, 0x4E, 0x47 }),
+        [".jpg"] = ("image/jpeg", new byte[] { 0xFF, 0xD8, 0xFF }),
+        [".jpeg"] = ("image/jpeg", new byte[] { 0xFF, 0xD8, 0xFF })
+    };
 
     private readonly Database _db;
 
@@ -271,6 +288,7 @@ public class ApplicationsController : ControllerBase
         return Ok(new { applicationId = id, status = "submitted" });
     }
 
+    [Authorize] // signed-in staff only
     [HttpPut("{id:int}/status")]
     public async Task<IActionResult> UpdateStatus(int id, UpdateStatusRequest request)
     {
@@ -284,13 +302,10 @@ public class ApplicationsController : ControllerBase
         if (note == null && (newStatus == "rejected" || newStatus == "escalated"))
             return BadRequest(new { error = $"Please add a note explaining why the application is {newStatus}." });
 
-        await using var conn = await _db.OpenAsync();
+        // Recorded as the signed-in agent (the sign-in check already confirmed they're active)
+        var staffId = AuthController.CurrentStaffId(User);
 
-        var staffCmd = new MySqlCommand(
-            "SELECT COUNT(*) FROM staff_users WHERE staff_id = @staff AND is_active = TRUE", conn);
-        staffCmd.Parameters.AddWithValue("@staff", request.StaffId);
-        if (Convert.ToInt32(await staffCmd.ExecuteScalarAsync()) == 0)
-            return BadRequest(new { error = "Choose an active agent before making changes." });
+        await using var conn = await _db.OpenAsync();
 
         var oldStatus = await GetStatusAsync(conn, id);
         if (oldStatus == null) return NotFound(new { error = $"Application {id} not found." });
@@ -307,7 +322,7 @@ public class ApplicationsController : ControllerBase
               SET status = @new, assigned_staff_id = @staff, rejection_reason = @reason
               WHERE application_id = @id AND status = @old", conn, tx);
         updateCmd.Parameters.AddWithValue("@new", newStatus);
-        updateCmd.Parameters.AddWithValue("@staff", request.StaffId);
+        updateCmd.Parameters.AddWithValue("@staff", staffId);
         updateCmd.Parameters.AddWithValue("@reason", newStatus == "rejected" ? note : null);
         updateCmd.Parameters.AddWithValue("@id", id);
         updateCmd.Parameters.AddWithValue("@old", oldStatus);
@@ -321,7 +336,7 @@ public class ApplicationsController : ControllerBase
                   VALUES (@id, @reason, 'open', @staff)", conn, tx);
             escCmd.Parameters.AddWithValue("@id", id);
             escCmd.Parameters.AddWithValue("@reason", note);
-            escCmd.Parameters.AddWithValue("@staff", request.StaffId);
+            escCmd.Parameters.AddWithValue("@staff", staffId);
             await escCmd.ExecuteNonQueryAsync();
         }
         else if (newStatus is "approved" or "rejected")
@@ -340,12 +355,13 @@ public class ApplicationsController : ControllerBase
             "approved" => "Approved",
             _ => newStatus
         };
-        await AddStatusHistoryAsync(conn, tx, id, oldStatus, newStatus, note ?? defaultNote, request.StaffId);
+        await AddStatusHistoryAsync(conn, tx, id, oldStatus, newStatus, note ?? defaultNote, staffId);
         await tx.CommitAsync();
 
         return Ok(new { applicationId = id, status = newStatus });
     }
 
+    [Authorize] // signed-in staff only
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] string? status)
     {
@@ -367,6 +383,7 @@ public class ApplicationsController : ControllerBase
         return Ok(results);
     }
 
+    [Authorize] // signed-in staff only
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)
     {
@@ -376,6 +393,7 @@ public class ApplicationsController : ControllerBase
     }
 
     // Demo estimate for the agent dashboard: calculated from the saved answers, not stored
+    [Authorize] // signed-in staff only
     [HttpGet("{id:int}/quote")]
     public async Task<IActionResult> GetQuote(int id)
     {
@@ -435,8 +453,105 @@ public class ApplicationsController : ControllerBase
         return Ok(quote);
     }
 
+    // ---------------------------------------------------------------
+    // Current-policy upload
+    // ---------------------------------------------------------------
+
+    // Upload (or replace) the declarations page of the policy the customer is switching from
+    [HttpPost("{id:int}/documents/current-policy")]
+    [RequestSizeLimit(MaxDocumentBytes + 64 * 1024)] // file plus multipart overhead
+    public async Task<IActionResult> UploadCurrentPolicy(int id, IFormFile? file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { error = "Choose a file to upload." });
+        if (file.Length > MaxDocumentBytes)
+            return BadRequest(new { error = "The file is too large. The limit is 5 MB." });
+
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (!AllowedDocumentTypes.TryGetValue(extension, out var type))
+            return BadRequest(new { error = "Upload a PDF, JPG, or PNG file." });
+
+        byte[] content;
+        using (var buffer = new MemoryStream())
+        {
+            await file.CopyToAsync(buffer);
+            content = buffer.ToArray();
+        }
+        if (!content.AsSpan().StartsWith(type.Signature))
+            return BadRequest(new { error = "That file doesn't look like a real PDF, JPG, or PNG." });
+
+        // Keep only the name (no folders) and drop characters that could break a download header
+        var fileName = Regex.Replace(Path.GetFileName(file.FileName), @"[^\w.\- ()]", "_");
+        if (fileName.Length > 255) fileName = fileName[^255..];
+
+        await using var conn = await _db.OpenAsync();
+        var status = await GetStatusAsync(conn, id);
+        if (status == null) return NotFound(new { error = $"Application {id} not found." });
+        if (status != "in_progress")
+            return Conflict(new { error = $"Application {id} is already {status} and can no longer be edited." });
+
+        var cmd = new MySqlCommand(
+            @"INSERT INTO application_documents (application_id, doc_type, file_name, content_type, size_bytes, content)
+              VALUES (@id, @type, @name, @contentType, @size, @content)
+              ON DUPLICATE KEY UPDATE file_name = VALUES(file_name), content_type = VALUES(content_type),
+                                      size_bytes = VALUES(size_bytes), content = VALUES(content), uploaded_at = NOW()",
+            conn);
+        cmd.Parameters.AddWithValue("@id", id);
+        cmd.Parameters.AddWithValue("@type", CurrentPolicyDocType);
+        cmd.Parameters.AddWithValue("@name", fileName);
+        cmd.Parameters.AddWithValue("@contentType", type.ContentType);
+        cmd.Parameters.AddWithValue("@size", content.Length);
+        cmd.Parameters.AddWithValue("@content", content);
+        try
+        {
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch (MySqlException ex) when (ex.ErrorCode == MySqlErrorCode.NoSuchTable)
+        {
+            return StatusCode(500, new { error = "File uploads aren't set up. Run Database/06_application_documents.sql in MySQL Workbench." });
+        }
+
+        return Ok(new { fileName, sizeBytes = content.Length });
+    }
+
+    [HttpDelete("{id:int}/documents/current-policy")]
+    public async Task<IActionResult> DeleteCurrentPolicy(int id)
+    {
+        await using var conn = await _db.OpenAsync();
+        var status = await GetStatusAsync(conn, id);
+        if (status == null) return NotFound(new { error = $"Application {id} not found." });
+        if (status != "in_progress")
+            return Conflict(new { error = $"Application {id} is already {status} and can no longer be edited." });
+
+        var cmd = new MySqlCommand(
+            "DELETE FROM application_documents WHERE application_id = @id AND doc_type = @type", conn);
+        cmd.Parameters.AddWithValue("@id", id);
+        cmd.Parameters.AddWithValue("@type", CurrentPolicyDocType);
+        await cmd.ExecuteNonQueryAsync();
+        return NoContent();
+    }
+
+    // Always sent as a download (never shown inline) so a file can't run in the API's origin.
+    [Authorize] // signed-in staff only
+    [HttpGet("{id:int}/documents/{documentId:int}")]
+    public async Task<IActionResult> DownloadDocument(int id, int documentId)
+    {
+        await using var conn = await _db.OpenAsync();
+        var cmd = new MySqlCommand(
+            @"SELECT file_name, content_type, content FROM application_documents
+              WHERE document_id = @doc AND application_id = @id", conn);
+        cmd.Parameters.AddWithValue("@doc", documentId);
+        cmd.Parameters.AddWithValue("@id", id);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return NotFound(new { error = "Document not found." });
+
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
+        return File((byte[])reader["content"], reader.GetString("content_type"), reader.GetString("file_name"));
+    }
+
     // The customer's info, answers, items, and status history. NULL if the application doesn't exist.
-    private static async Task<ApplicationDetail?> LoadDetailAsync(MySqlConnection conn, int id)
+    // Also used by DashboardController for the pricing summary.
+    internal static async Task<ApplicationDetail?> LoadDetailAsync(MySqlConnection conn, int id)
     {
         var cmd = new MySqlCommand(SummarySelect + " WHERE a.application_id = @id", conn);
         cmd.Parameters.AddWithValue("@id", id);
@@ -507,10 +622,36 @@ public class ApplicationsController : ControllerBase
             }
         }
 
+        var docCmd = new MySqlCommand(
+            @"SELECT document_id, doc_type, file_name, content_type, size_bytes, uploaded_at
+              FROM application_documents WHERE application_id = @id ORDER BY uploaded_at", conn);
+        docCmd.Parameters.AddWithValue("@id", id);
+        try
+        {
+            await using var reader = await docCmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                detail.Documents.Add(new DocumentInfo
+                {
+                    DocumentId = reader.GetInt32("document_id"),
+                    DocType = reader.GetString("doc_type"),
+                    FileName = reader.GetString("file_name"),
+                    ContentType = reader.GetString("content_type"),
+                    SizeBytes = reader.GetInt32("size_bytes"),
+                    UploadedAt = reader.GetDateTime("uploaded_at")
+                });
+            }
+        }
+        catch (MySqlException ex) when (ex.ErrorCode == MySqlErrorCode.NoSuchTable)
+        {
+            // 06_application_documents.sql hasn't been run yet; show the application without files
+        }
+
         return detail;
     }
 
-    private static async Task<QuoteResponse> BuildQuoteAsync(MySqlConnection conn, ApplicationDetail detail)
+    // Throws InvalidOperationException if demo_quote_factors isn't set up. Also used by DashboardController.
+    internal static async Task<QuoteResponse> BuildQuoteAsync(MySqlConnection conn, ApplicationDetail detail)
     {
         // Newest rule version in demo_quote_factors (see Database/04_demo_quote_rates.sql)
         var factorCmd = new MySqlCommand(
@@ -563,7 +704,7 @@ public class ApplicationsController : ControllerBase
         quote.Notes.Add("Prices vary a lot by state. This estimate uses national averages and isn't adjusted for your state yet.");
         if (detail.IsBundle)
         {
-            quote.Notes.Add("Bundling may qualify you for a multi-policy discount. It isn't included here; your specialist will confirm.");
+            quote.Notes.Add("Any multi-policy (bundle) discount isn't included in this estimate.");
             if (detail.LineCodes.Contains("FLOOD"))
                 quote.Notes.Add("Flood policies through the NFIP usually don't count toward bundle discounts.");
         }

@@ -56,7 +56,7 @@ body {
     color: #fff;
 }
 .valent-btn-primary:disabled {
-    background-color: var(--brand-primary-soft);
+    background-color: var(--brand-primary-light);
     border-color: var(--brand-primary-soft);
 }
 
@@ -215,6 +215,25 @@ body {
     white-space: nowrap;
 }
 
+/* State comparison (explorer) */
+.state-compare-table {
+    font-size: 0.9rem;
+    min-width: 640px; /* scrolls sideways on phones instead of squeezing 4 columns */
+}
+.state-compare-table td.field-label {
+    white-space: normal;
+}
+.state-compare-table td.your-state {
+    background-color: var(--brand-primary-light);
+}
+.verify-badge {
+    background-color: #fff3cd;
+    color: #664d03;
+    border: 1px solid #ffe69c;
+    font-weight: 600;
+    font-size: 0.7rem;
+}
+
 /* Next step cards */
 .next-step-card {
     border: 1px solid #e9ecef;
@@ -243,4 +262,43 @@ body {
 @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
+}
+
+/* ---------------- Quote step: demo estimate ---------------- */
+.quote-card {
+    border: 2px solid var(--brand-primary-border, #e8c3ca);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    background-color: #fff;
+}
+.quote-headline {
+    margin-bottom: 1rem;
+}
+.quote-label {
+    font-weight: 600;
+    color: var(--brand-accent, #243b53);
+}
+.quote-total {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--brand-primary, #9e1b32);
+    line-height: 1.2;
+}
+.quote-sub {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+.quote-line {
+    border-top: 1px solid #dee2e6;
+    padding: 0.75rem 0;
+}
+.quote-line:last-of-type {
+    margin-bottom: 0.5rem;
+}
+.quote-badge-referred { background-color: #e0ecfa; color: #1c4f8a; }
+.quote-badge-incomplete { background-color: #fff3cd; color: #664d03; }
+.quote-disclaimer {
+    border-top: 1px dashed #ced4da;
+    padding-top: 0.75rem;
+    color: #495057;
 }
