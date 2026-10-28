@@ -553,7 +553,6 @@
         el.appError = document.getElementById('appError');
         el.appSteps = document.querySelectorAll('.app-step');
         el.appLineFieldsets = el.screenApply.querySelectorAll('fieldset[data-lines]');
-        el.coverageCheckboxes = document.getElementById('coverageCheckboxes');
         el.startDate = document.getElementById('startDate');
         el.switchingRadios = document.querySelectorAll('input[name="switching_carrier"]');
         el.currentPolicyFields = document.getElementById('currentPolicyFields');
@@ -701,7 +700,6 @@
                 form.reset();
                 form.classList.remove('was-validated');
             });
-            renderCoverageCheckboxes();
             resetRepeatableItems();
             app.uploadedPolicyName = null;
             updateCurrentPolicyFields();
@@ -1205,19 +1203,6 @@
         return '$' + amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
     }
 
-    function renderCoverageCheckboxes() {
-        el.coverageCheckboxes.innerHTML = COVERAGE_ORDER.map(function (code) {
-            var c = COVERAGE_DATA[code];
-            var checked = state.selectedCoverages.indexOf(code) !== -1 ? ' checked' : '';
-            return (
-                '<div class="col"><div class="form-check">' +
-                    '<input class="form-check-input" type="checkbox" name="coverage_components" id="cov' + code + '" value="' + code + '"' + checked + '>' +
-                    '<label class="form-check-label" for="cov' + code + '">' + code + ' &mdash; ' + c.name + '</label>' +
-                '</div></div>'
-            );
-        }).join('');
-    }
-
     function showAppStep(step) {
         app.step = step;
         el.appSteps.forEach(function (form) {
@@ -1416,9 +1401,7 @@
             Object.keys(answers).forEach(function (name) {
                 var value = answers[name];
                 var field = form.querySelector('[name="' + name + '"]');
-                if (name === 'coverage_components') {
-                    value = value ? value.split(',').map(function (code) { return COVERAGE_DATA[code].name; }).join(', ') : 'None selected';
-                } else if (field.tagName === 'SELECT') {
+                if (field.tagName === 'SELECT') {
                     value = field.options[field.selectedIndex].text;
                 } else if (field.type === 'radio') {
                     var choice = form.querySelector('[name="' + name + '"]:checked');
