@@ -41,7 +41,9 @@ public class ApplicationSummary
     public string? CustomerName { get; set; }
     public string? AssignedTo { get; set; }    // agent's name, if one has picked it up
     public string? LatestNote { get; set; }    // note from the most recent status change
+    public bool HasAccount { get; set; }       // started by a signed-in customer (false = guest)
     public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
     public DateTime? SubmittedAt { get; set; }
 }
 
@@ -115,7 +117,12 @@ public class DashboardResponse
     public List<int> Funnel { get; set; } = new();
 
     public List<StepFriction> Friction { get; set; } = new();
-    public int QuickExitSeconds { get; set; }
+    // Client definition (Sprint 2 review): a quick exit is leaving on the first two
+    // pages where the customer has to enter information, i.e. application steps 1 and 2
+    public List<int> QuickExitSteps { get; set; } = new();
+    public int QuickExits { get; set; }            // applications whose visit ended on a quick-exit step
+
+    public VisitSummary Visits { get; set; } = new();
 
     public PricingSummary Pricing { get; set; } = new();
     public AgentUsage Agents { get; set; } = new();
@@ -172,9 +179,128 @@ public class StepFriction
     public int Visits { get; set; }               // sessions that opened the step
     public double? AvgDwellSeconds { get; set; }  // average time spent before finishing or leaving
     public int Exits { get; set; }                // left the site on this step
-    public int QuickExits { get; set; }           // left within QuickExitSeconds
+    public int QuickExits { get; set; }           // exits on a quick-exit step (steps 1-2), else 0
     public int ErrorSessions { get; set; }        // sessions that hit at least one validation error
     public int BackClicks { get; set; }           // pressed Back from this step
+}
+
+// Whole visits to the customer site, from opening it to leaving or closing it
+// (analytics_sessions.started_at to ended_at, which every tracking batch moves forward)
+public class VisitSummary
+{
+    public int Sessions { get; set; }
+    public double? AvgVisitSeconds { get; set; }
+    public int StartedApplication { get; set; }   // visits that opened the application form
+    public List<ExitPage> ExitPages { get; set; } = new();
+}
+
+// Where visitors were when they left
+public class ExitPage
+{
+    public string Page { get; set; } = "";        // 'landing', 'sign_in', 'select', 'explorer', 'compare', 'apply'
+    public int? StepNumber { get; set; }          // application step, for page 'apply'
+    public int Exits { get; set; }
+    public double? AvgSecondsOnPage { get; set; } // time on that page/step before leaving
+    public double? AvgVisitSeconds { get; set; }  // whole visit, start to leaving
+}
+
+// ---- Tracking events from the customer site (POST /api/events) ----
+
+public class EventBatch
+{
+    public string SessionId { get; set; } = "";   // UUID made by the browser, one per page load
+    public string? StateCode { get; set; }
+    public string? DeviceType { get; set; }       // 'desktop', 'mobile', 'tablet'
+    public List<TrackedEvent> Events { get; set; } = new();
+}
+
+public class TrackedEvent
+{
+    public string Name { get; set; } = "";
+    public string? Page { get; set; }
+    public int? StepNumber { get; set; }
+    public int? ApplicationId { get; set; }
+    public int? DurationMs { get; set; }
+    public Dictionary<string, string?>? Metadata { get; set; }  // field NAMES only, never what the customer typed
+}
+
+// ---- Customer sign-in (mockup 1, /api/customer) ----
+
+public class CustomerAccount
+{
+    public int AccountId { get; set; }
+    public string FirstName { get; set; } = "";
+    public string LastName { get; set; } = "";
+    public string Email { get; set; } = "";
+}
+
+public class CustomerRegisterRequest
+{
+    public string FirstName { get; set; } = "";
+    public string LastName { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string Password { get; set; } = "";
+    public ClaimApplication? Claim { get; set; }   // guest application to move into the new account
+}
+
+public class CustomerLoginRequest
+{
+    public string Email { get; set; } = "";
+    public string Password { get; set; } = "";
+    public ClaimApplication? Claim { get; set; }
+}
+
+// A guest's in-progress application, proven by the guest key the API gave them
+public class ClaimApplication
+{
+    public int ApplicationId { get; set; }
+    public string GuestKey { get; set; } = "";
+}
+
+public class CustomerLoginResponse
+{
+    public string Token { get; set; } = "";
+    public DateTime ExpiresAt { get; set; }
+    public CustomerAccount Account { get; set; } = new();
+    public int? ClaimedApplicationId { get; set; }
+}
+
+// Everything the form needs to pick up where the customer left off
+// (GET /api/applications/{id}/resume)
+public class ResumeResponse
+{
+    public int ApplicationId { get; set; }
+    public List<string> LineCodes { get; set; } = new();
+    public string StateCode { get; set; } = "";
+    public string Status { get; set; } = "";
+    public int CurrentStep { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public Dictionary<string, string?> Answers { get; set; } = new();   // includes first_name, last_name, email, phone
+    public Dictionary<string, List<Dictionary<string, string?>>> Items { get; set; } = new();
+    public string? CurrentPolicyFileName { get; set; }
+}
+
+// ---- Preliminary eligibility rules (Services/StateRules.cs) ----
+
+// Something an agent should look at, raised by a rule while estimating
+public class ReviewFlag
+{
+    public string LineCode { get; set; } = "";
+    public string Severity { get; set; } = "";     // 'refer' (send to a specialist), 'review' (check it), 'info'
+    public string RuleId { get; set; } = "";
+    public string Message { get; set; } = "";
+}
+
+// One rule as listed for the client on the dashboard
+public class RuleInfo
+{
+    public string Id { get; set; } = "";
+    public string LineCode { get; set; } = "";
+    public string State { get; set; } = "";         // 'ALL', 'AL', 'TX', 'NY'
+    public string When { get; set; } = "";
+    public string Effect { get; set; } = "";
+    public string? Source { get; set; }
+    public bool NeedsVerification { get; set; }
 }
 
 // ---- Demo quote (GET/POST /api/applications/{id}/quote) ----
@@ -193,6 +319,7 @@ public class QuoteResponse
     public decimal? TotalHigh { get; set; }
     public List<LineQuote> Lines { get; set; } = new();
     public List<string> Notes { get; set; } = new();
+    public List<ReviewFlag> Flags { get; set; } = new();   // for agents; see StateRules
     public DateTime CreatedAt { get; set; }
 }
 

@@ -26,8 +26,10 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 // Staff sign-in: [Authorize] endpoints need "Authorization: Bearer <token>" from POST /api/auth/login
+// Customer sign-in (optional, mockup 1) is a second scheme that endpoints ask for by name
 builder.Services.AddAuthentication(StaffTokenAuthHandler.SchemeName)
-    .AddScheme<AuthenticationSchemeOptions, StaffTokenAuthHandler>(StaffTokenAuthHandler.SchemeName, null);
+    .AddScheme<AuthenticationSchemeOptions, StaffTokenAuthHandler>(StaffTokenAuthHandler.SchemeName, null)
+    .AddScheme<AuthenticationSchemeOptions, CustomerTokenAuthHandler>(CustomerTokenAuthHandler.SchemeName, null);
 builder.Services.AddAuthorization();
 
 // Slow down password guessing: 5 sign-in attempts per minute from one address
@@ -36,11 +38,19 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1) }));
+    // Customer sign-in / sign-up gets its own limit, so a customer demo doesn't lock out staff sign-in
+    options.AddPolicy("customer-login", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }));
+    // Tracking events from the customer site: generous, but stops a runaway script
+    options.AddPolicy("events", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1) }));
     options.OnRejected = async (context, cancellationToken) =>
     {
         context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         await context.HttpContext.Response.WriteAsJsonAsync(
-            new { error = "Too many sign-in attempts. Wait a minute and try again." }, cancellationToken);
+            new { error = "Too many attempts. Wait a minute and try again." }, cancellationToken);
     };
 });
 

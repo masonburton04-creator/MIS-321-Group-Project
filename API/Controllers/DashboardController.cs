@@ -1,5 +1,6 @@
 using API.Data;
 using API.Models;
+using API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MySqlConnector;
@@ -7,16 +8,18 @@ using MySqlConnector;
 namespace API.Controllers;
 
 // GET /api/dashboard?state=AL&line=HOME&range=last30
-// KPI, funnel, and friction numbers for the agent dashboard (mockup 2).
+// KPI, funnel, friction, and visit-time numbers for the agent dashboard (mockup 2).
 // Every filter is optional. range: last7 | last30 | last90 | ytd | all (default all)
+// GET /api/dashboard/rules: the preliminary eligibility rules (Services/StateRules.cs)
 [ApiController]
 [Authorize] // signed-in staff only
 [Route("api/dashboard")]
 public class DashboardController : ControllerBase
 {
-    // Leaving within this many seconds counts as a "quick exit".
-    // Placeholder until the client defines what "leaving quickly" means.
-    private const int QuickExitSeconds = 10;
+    // Client definition from the Sprint 2 review: "a quick exit should be leaving on the
+    // first 2 pages where they are required to enter information" = application steps
+    // 1 (Coverage) and 2 (Details). Type & State is choices only, so it isn't included.
+    private static readonly int[] QuickExitSteps = { 1, 2 };
 
     private readonly Database _db;
 
@@ -56,7 +59,8 @@ public class DashboardController : ControllerBase
         }
 
         await using var conn = await _db.OpenAsync();
-        var result = new DashboardResponse { QuickExitSeconds = QuickExitSeconds };
+        var result = new DashboardResponse { QuickExitSteps = QuickExitSteps.ToList() };
+        var quickExitList = string.Join(", ", QuickExitSteps);
 
         // current_step = furthest step reached, so "reached step N" = current_step >= N
         var kpiCmd = new MySqlCommand(
@@ -96,7 +100,7 @@ public class DashboardController : ControllerBase
                       COUNT(DISTINCT CASE WHEN e.event_name = 'step_enter' THEN e.session_id END) AS visits,
                       AVG(CASE WHEN e.event_name IN ('step_complete', 'page_exit') THEN e.duration_ms END) / 1000 AS avg_dwell,
                       COALESCE(SUM(e.event_name = 'page_exit'), 0) AS exits,
-                      COALESCE(SUM(e.event_name = 'page_exit' AND e.duration_ms < @quick), 0) AS quick_exits,
+                      COALESCE(SUM(e.event_name = 'page_exit' AND e.step_number IN ({quickExitList})), 0) AS quick_exits,
                       COUNT(DISTINCT CASE WHEN e.event_name = 'validation_error' THEN e.session_id END) AS error_sessions,
                       COALESCE(SUM(e.event_name = 'step_back'), 0) AS backs
                FROM analytics_events e
@@ -105,7 +109,6 @@ public class DashboardController : ControllerBase
                GROUP BY e.step_number
                ORDER BY e.step_number", conn);
         AddFilterParams(frictionCmd);
-        frictionCmd.Parameters.AddWithValue("@quick", QuickExitSeconds * 1000);
         await using (var reader = await frictionCmd.ExecuteReaderAsync())
         {
             while (await reader.ReadAsync())
@@ -123,10 +126,88 @@ public class DashboardController : ControllerBase
             }
         }
 
+        // Applications whose visit ended on a quick-exit step (each counted once)
+        var quickCmd = new MySqlCommand(
+            $@"SELECT COUNT(DISTINCT e.application_id)
+               FROM analytics_events e JOIN applications a ON a.application_id = e.application_id
+               WHERE e.event_name = 'page_exit' AND e.step_number IN ({quickExitList})
+                 AND a.submitted_at IS NULL AND {filter}", conn);
+        AddFilterParams(quickCmd);
+        result.QuickExits = Convert.ToInt32(await quickCmd.ExecuteScalarAsync());
+
+        result.Visits = await LoadVisitsAsync(conn, state, line, from);
         result.Agents = await LoadAgentUsageAsync(conn, filter, AddFilterParams);
         result.Pricing = await LoadPricingAsync(conn, filter, AddFilterParams, line?.Trim().ToUpperInvariant());
 
         return Ok(result);
+    }
+
+    [HttpGet("rules")]
+    public IActionResult Rules() => Ok(StateRules.Catalog);
+
+    // Whole visits to the customer site (analytics_sessions), and where visitors left.
+    // State = the state the visitor picked; line = visits that started an application for that line.
+    private static async Task<VisitSummary> LoadVisitsAsync(MySqlConnection conn, string? state, string? line, DateTime? from)
+    {
+        var conditions = new List<string>();
+        if (!string.IsNullOrWhiteSpace(state)) conditions.Add("s.state_code = @state");
+        if (!string.IsNullOrWhiteSpace(line))
+            conditions.Add(@"EXISTS (SELECT 1 FROM analytics_events le
+                                     JOIN application_lines al ON al.application_id = le.application_id
+                                     JOIN insurance_lines l ON l.line_id = al.line_id
+                                     WHERE le.session_id = s.session_id AND l.line_code = @line)");
+        if (from != null) conditions.Add("s.started_at >= @from");
+        var filter = conditions.Count == 0 ? "TRUE" : string.Join(" AND ", conditions);
+
+        void AddParams(MySqlCommand cmd)
+        {
+            cmd.Parameters.AddWithValue("@state", state?.Trim().ToUpperInvariant());
+            cmd.Parameters.AddWithValue("@line", line?.Trim().ToUpperInvariant());
+            cmd.Parameters.AddWithValue("@from", from);
+        }
+
+        var visits = new VisitSummary();
+        var summaryCmd = new MySqlCommand(
+            $@"SELECT COUNT(*) AS sessions,
+                      AVG(TIMESTAMPDIFF(SECOND, s.started_at, s.ended_at)) AS avg_visit,
+                      COALESCE(SUM(EXISTS (SELECT 1 FROM analytics_events e
+                                           WHERE e.session_id = s.session_id AND e.application_id IS NOT NULL)), 0) AS started_app
+               FROM analytics_sessions s
+               WHERE {filter}", conn);
+        AddParams(summaryCmd);
+        await using (var reader = await summaryCmd.ExecuteReaderAsync())
+        {
+            await reader.ReadAsync();
+            visits.Sessions = Convert.ToInt32(reader["sessions"]);
+            visits.AvgVisitSeconds = reader.IsDBNull(reader.GetOrdinal("avg_visit")) ? null : Convert.ToDouble(reader["avg_visit"]);
+            visits.StartedApplication = Convert.ToInt32(reader["started_app"]);
+        }
+
+        var exitCmd = new MySqlCommand(
+            $@"SELECT e.page, e.step_number, COUNT(*) AS exits,
+                      AVG(e.duration_ms) / 1000 AS avg_on_page,
+                      AVG(TIMESTAMPDIFF(SECOND, s.started_at, s.ended_at)) AS avg_visit
+               FROM analytics_events e
+               JOIN analytics_sessions s ON s.session_id = e.session_id
+               WHERE e.event_name = 'page_exit' AND {filter}
+               GROUP BY e.page, e.step_number
+               ORDER BY exits DESC", conn);
+        AddParams(exitCmd);
+        await using (var reader = await exitCmd.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                visits.ExitPages.Add(new ExitPage
+                {
+                    Page = reader.IsDBNull(reader.GetOrdinal("page")) ? "unknown" : reader.GetString("page"),
+                    StepNumber = reader.IsDBNull(reader.GetOrdinal("step_number")) ? null : reader.GetInt32("step_number"),
+                    Exits = Convert.ToInt32(reader["exits"]),
+                    AvgSecondsOnPage = reader.IsDBNull(reader.GetOrdinal("avg_on_page")) ? null : Convert.ToDouble(reader["avg_on_page"]),
+                    AvgVisitSeconds = reader.IsDBNull(reader.GetOrdinal("avg_visit")) ? null : Convert.ToDouble(reader["avg_visit"])
+                });
+            }
+        }
+        return visits;
     }
 
     // How often applications need an agent, plus each agent's status changes

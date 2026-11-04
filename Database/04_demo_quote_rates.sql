@@ -30,7 +30,7 @@ CREATE TABLE demo_quote_factors (
 );
 
 -- Only one version is active at a time; the API uses this one
-SET @v = 'demo-2026-10';
+SET @v = 'demo-2026-11';
 
 INSERT INTO demo_quote_factors (rule_version, line_code, factor_key, factor_value, description, source) VALUES
 
@@ -72,7 +72,27 @@ INSERT INTO demo_quote_factors (rule_version, line_code, factor_key, factor_valu
 -- Placeholders: raise the HIGH end only, since we can't know the real effect
 (@v, 'AUTO', 'incident_high_mult',  1.50, 'Recent accidents/claims/violations: high end x this', NULL),
 (@v, 'AUTO', 'new_driver_years',    3,    'A driver licensed fewer years than this counts as a new driver', NULL),
-(@v, 'AUTO', 'new_driver_high_mult', 1.50, 'Any new driver on the policy: high end x this', NULL);
+(@v, 'AUTO', 'new_driver_high_mult', 1.50, 'Any new driver on the policy: high end x this', NULL),
+
+-- ---- Preliminary state eligibility rules (Sprint 2, for client review) ----
+-- The client asked for our first idea of what should drive eligibility per state,
+-- e.g. wind/hail risk in Texas for homes and cars. The counties and yes/no rules
+-- are in API/Services/StateRules.cs; these are the adjustable numbers. All placeholders.
+(@v, 'HOME', 'roof_age_refer_years', 20, 'Roof older than this: a specialist prices it (roof inspection)', NULL),
+(@v, 'HOME', 'prior_claims_refer',   3,  'This many home claims in 5 years or more: a specialist prices it', NULL),
+(@v, 'HOME', 'old_systems_years',    40, 'No major electrical/plumbing/HVAC update in this many years: flag for review', NULL),
+(@v, 'HOME', 'old_systems_high_mult', 1.20, 'Old systems: high end x this', NULL),
+(@v, 'HOME', 'coastal_high_mult',    1.75, 'Coastal county (hurricane / named-storm exposure): high end x this', NULL),
+(@v, 'HOME', 'tx_hail_high_mult',    1.30, 'Texas (statewide wind/hail risk): high end x this',
+ 'TDI: wind and hail are the main Texas home risk; percentage wind/hail deductibles are common'),
+(@v, 'HOME', 'tx_old_roof_years',    10, 'Texas: roof older than this is more likely to have hail damage', NULL),
+(@v, 'HOME', 'tx_old_roof_high_mult', 1.25, 'Texas roof older than tx_old_roof_years: high end x this', NULL),
+(@v, 'HOME', 'impact_roof_low_mult', 0.90, 'FORTIFIED or Class 4 impact-resistant roof: low end x this (possible discount)',
+ 'AL DOI: insurers must give wind discounts for IBHS FORTIFIED homes'),
+(@v, 'JEWELRY', 'specialist_item_value', 25000, 'Any single item worth more than this: flag for a jewelry specialist', NULL),
+(@v, 'AUTO', 'tx_hail_comp_high_mult', 1.20, 'Texas full coverage (hail claims on comprehensive): high end x this',
+ 'TDI auto guide; hail is a leading cause of Texas comprehensive claims (needs verification)'),
+(@v, 'AUTO', 'ny_required_low_mult', 1.10, 'New York (PIP and uninsured motorist required): low end x this', 'NY DFS: What Auto Coverages Do I Need?');
 
 SELECT line_code, factor_key, factor_value, COALESCE(source, '(placeholder)') AS source
 FROM demo_quote_factors ORDER BY line_code, factor_id;

@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using API.Data;
 using API.Models;
 using API.Services;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MySqlConnector;
@@ -13,6 +14,9 @@ namespace API.Controllers;
 //   POST /api/applications                      start a new application (one line or a bundle)
 //   PUT  /api/applications/{id}/steps/{step}    save one step's answers
 //   POST /api/applications/{id}/submit          submit for agent review
+//   GET  /api/applications/{id}/resume          answers saved so far, to continue later
+// Who may use those (CheckCustomerAccessAsync): the signed-in customer account that started the
+// application, or, for a guest, whoever sends the guest key from POST in an X-Guest-Key header.
 // And for the agent dashboard (these require a signed-in staff member, see AuthController):
 //   GET  /api/applications                      list applications
 //   GET  /api/applications/{id}                 one application with its answers and history
@@ -110,11 +114,18 @@ public class ApplicationsController : ControllerBase
         await customerCmd.ExecuteNonQueryAsync();
         var customerId = customerCmd.LastInsertedId;
 
+        // Signed in: the application belongs to the account. Guest: only the browser holding
+        // the guest key (returned once, below) can keep editing it.
+        var accountId = await CustomerTokenAuthHandler.CurrentAccountIdAsync(HttpContext);
+        var guestKey = accountId == null ? StaffTokens.NewToken() : null;
+
         var appCmd = new MySqlCommand(
-            @"INSERT INTO applications (customer_id, state_code, status, current_step)
-              VALUES (@customer, @state, 'in_progress', 1)", conn, tx);
+            @"INSERT INTO applications (customer_id, state_code, status, current_step, account_id, guest_key_hash)
+              VALUES (@customer, @state, 'in_progress', 1, @account, @guestKey)", conn, tx);
         appCmd.Parameters.AddWithValue("@customer", customerId);
         appCmd.Parameters.AddWithValue("@state", stateCode);
+        appCmd.Parameters.AddWithValue("@account", accountId);
+        appCmd.Parameters.AddWithValue("@guestKey", guestKey == null ? null : StaffTokens.Hash(guestKey));
         await appCmd.ExecuteNonQueryAsync();
         var applicationId = (int)appCmd.LastInsertedId;
 
@@ -131,11 +142,13 @@ public class ApplicationsController : ControllerBase
         await AddStatusHistoryAsync(conn, tx, applicationId, null, "in_progress", note);
         await tx.CommitAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = applicationId }, new { applicationId });
+        return CreatedAtAction(nameof(GetById), new { id = applicationId }, new { applicationId, guestKey });
     }
 
+    // draft=true ("Save & finish later", and autosave while typing): saves whatever is filled in,
+    // even if the step isn't complete, and doesn't count the step as finished
     [HttpPut("{id:int}/steps/{step:int}")]
-    public async Task<IActionResult> SaveStep(int id, int step, SaveStepRequest request)
+    public async Task<IActionResult> SaveStep(int id, int step, SaveStepRequest request, [FromQuery] bool draft = false)
     {
         if (step < 1 || step > TotalSteps)
             return BadRequest(new { error = $"Step must be between 1 and {TotalSteps}." });
@@ -165,8 +178,9 @@ public class ApplicationsController : ControllerBase
 
         await using var conn = await _db.OpenAsync();
 
+        var denied = await CheckCustomerAccessAsync(conn, id);
+        if (denied != null) return denied;
         var status = await GetStatusAsync(conn, id);
-        if (status == null) return NotFound(new { error = $"Application {id} not found." });
         if (status != "in_progress")
             return Conflict(new { error = $"Application {id} is already {status} and can no longer be edited." });
 
@@ -178,9 +192,9 @@ public class ApplicationsController : ControllerBase
             customer = CustomerFields.ToDictionary(f => f, f => Clean(answers.GetValueOrDefault(f)));
             foreach (var f in CustomerFields) answers.Remove(f);
 
-            if (customer["first_name"] == null || customer["last_name"] == null || customer["email"] == null)
+            if (!draft && (customer["first_name"] == null || customer["last_name"] == null || customer["email"] == null))
                 return BadRequest(new { error = "First name, last name, and email are required." });
-            if (!IsValidEmail(customer["email"]!))
+            if (!draft && !IsValidEmail(customer["email"]!))
                 return BadRequest(new { error = "Please enter a valid email address." });
         }
 
@@ -242,11 +256,14 @@ public class ApplicationsController : ControllerBase
             }
         }
 
-        // current_step = furthest step reached, so the dashboard can see where people stop
+        // current_step = furthest step reached, so the dashboard can see where people stop.
+        // A draft only marks the step it was saved on as reached. updated_at changes either way,
+        // which is what "saved ... ago" shows the customer.
         var stepCmd = new MySqlCommand(
-            "UPDATE applications SET current_step = GREATEST(COALESCE(current_step, 1), @next) WHERE application_id = @id",
+            @"UPDATE applications SET current_step = GREATEST(COALESCE(current_step, 1), @next), updated_at = NOW()
+              WHERE application_id = @id",
             conn, tx);
-        stepCmd.Parameters.AddWithValue("@next", Math.Min(step + 1, TotalSteps));
+        stepCmd.Parameters.AddWithValue("@next", draft ? step : Math.Min(step + 1, TotalSteps));
         stepCmd.Parameters.AddWithValue("@id", id);
         await stepCmd.ExecuteNonQueryAsync();
 
@@ -259,8 +276,9 @@ public class ApplicationsController : ControllerBase
     {
         await using var conn = await _db.OpenAsync();
 
+        var denied = await CheckCustomerAccessAsync(conn, id);
+        if (denied != null) return denied;
         var status = await GetStatusAsync(conn, id);
-        if (status == null) return NotFound(new { error = $"Application {id} not found." });
         if (status != "in_progress")
             return Conflict(new { error = $"Application {id} has already been {status}." });
 
@@ -416,6 +434,8 @@ public class ApplicationsController : ControllerBase
     public async Task<IActionResult> CreateQuote(int id)
     {
         await using var conn = await _db.OpenAsync();
+        var denied = await CheckCustomerAccessAsync(conn, id);
+        if (denied != null) return denied;
         var detail = await LoadDetailAsync(conn, id);
         if (detail == null) return NotFound(new { error = $"Application {id} not found." });
         QuoteResponse quote;
@@ -453,6 +473,39 @@ public class ApplicationsController : ControllerBase
         return Ok(quote);
     }
 
+    // Everything saved so far, so the form can continue where the customer left off
+    // (signed in from "My applications", or as a guest on the same device)
+    [HttpGet("{id:int}/resume")]
+    public async Task<IActionResult> Resume(int id)
+    {
+        await using var conn = await _db.OpenAsync();
+        var denied = await CheckCustomerAccessAsync(conn, id);
+        if (denied != null) return denied;
+
+        var detail = await LoadDetailAsync(conn, id);
+        if (detail == null) return NotFound(new { error = $"Application {id} not found." });
+
+        var answers = new Dictionary<string, string?>(detail.Answers)
+        {
+            ["first_name"] = detail.FirstName,
+            ["last_name"] = detail.LastName,
+            ["email"] = detail.Email,
+            ["phone"] = detail.Phone
+        };
+        return Ok(new ResumeResponse
+        {
+            ApplicationId = detail.ApplicationId,
+            LineCodes = detail.LineCodes,
+            StateCode = detail.StateCode,
+            Status = detail.Status,
+            CurrentStep = Math.Clamp(detail.CurrentStep ?? 1, 1, TotalSteps),
+            UpdatedAt = detail.UpdatedAt,
+            Answers = answers,
+            Items = detail.Items,
+            CurrentPolicyFileName = detail.Documents.FirstOrDefault(d => d.DocType == CurrentPolicyDocType)?.FileName
+        });
+    }
+
     // ---------------------------------------------------------------
     // Current-policy upload
     // ---------------------------------------------------------------
@@ -485,8 +538,9 @@ public class ApplicationsController : ControllerBase
         if (fileName.Length > 255) fileName = fileName[^255..];
 
         await using var conn = await _db.OpenAsync();
+        var denied = await CheckCustomerAccessAsync(conn, id);
+        if (denied != null) return denied;
         var status = await GetStatusAsync(conn, id);
-        if (status == null) return NotFound(new { error = $"Application {id} not found." });
         if (status != "in_progress")
             return Conflict(new { error = $"Application {id} is already {status} and can no longer be edited." });
 
@@ -518,8 +572,9 @@ public class ApplicationsController : ControllerBase
     public async Task<IActionResult> DeleteCurrentPolicy(int id)
     {
         await using var conn = await _db.OpenAsync();
+        var denied = await CheckCustomerAccessAsync(conn, id);
+        if (denied != null) return denied;
         var status = await GetStatusAsync(conn, id);
-        if (status == null) return NotFound(new { error = $"Application {id} not found." });
         if (status != "in_progress")
             return Conflict(new { error = $"Application {id} is already {status} and can no longer be edited." });
 
@@ -680,13 +735,15 @@ public class ApplicationsController : ControllerBase
             }
         }
 
-        var lines = new DemoQuoteEngine(factors).Estimate(detail);
+        var engine = new DemoQuoteEngine(factors);
+        var lines = engine.Estimate(detail);
         var quote = new QuoteResponse
         {
             ApplicationId = detail.ApplicationId,
             StateCode = detail.StateCode,
             RuleVersion = ruleVersion,
             Lines = lines,
+            Flags = engine.Flags,
             CreatedAt = DateTime.Now,
             // Any missing answer makes the whole quote incomplete; otherwise any specialist line makes it referred
             Status = lines.Any(l => l.Status == "INCOMPLETE") ? "INCOMPLETE"
@@ -701,7 +758,7 @@ public class ApplicationsController : ControllerBase
             quote.TotalHigh = lines.Sum(l => l.High);
         }
 
-        quote.Notes.Add("Prices vary a lot by state. This estimate uses national averages and isn't adjusted for your state yet.");
+        quote.Notes.Add("Prices vary a lot by state. This estimate uses national averages with a few preliminary state adjustments (such as Texas wind and hail).");
         if (detail.IsBundle)
         {
             quote.Notes.Add("Any multi-policy (bundle) discount isn't included in this estimate.");
@@ -718,7 +775,7 @@ public class ApplicationsController : ControllerBase
     // line_codes / line_names list every line on the application (2+ for a bundle)
     private const string SummarySelect =
         @"SELECT a.application_id, a.state_code, a.status, a.current_step, a.rejection_reason,
-                 a.created_at, a.submitted_at, c.first_name, c.last_name, c.email, c.phone,
+                 a.created_at, a.updated_at, a.submitted_at, a.account_id, c.first_name, c.last_name, c.email, c.phone,
                  CONCAT(s.first_name, ' ', s.last_name) AS assigned_to,
                  (SELECT GROUP_CONCAT(l.line_code ORDER BY l.line_id SEPARATOR ',')
                   FROM application_lines al JOIN insurance_lines l ON l.line_id = al.line_id
@@ -744,6 +801,8 @@ public class ApplicationsController : ControllerBase
         summary.Status = reader.GetString("status");
         summary.CurrentStep = reader.IsDBNull(reader.GetOrdinal("current_step")) ? null : reader.GetInt32("current_step");
         summary.CreatedAt = reader.GetDateTime("created_at");
+        summary.UpdatedAt = reader.GetDateTime("updated_at");
+        summary.HasAccount = !reader.IsDBNull(reader.GetOrdinal("account_id"));
         summary.SubmittedAt = reader.IsDBNull(reader.GetOrdinal("submitted_at")) ? null : reader.GetDateTime("submitted_at");
 
         var first = reader.IsDBNull(reader.GetOrdinal("first_name")) ? null : reader.GetString("first_name");
@@ -751,6 +810,36 @@ public class ApplicationsController : ControllerBase
         summary.CustomerName = first == null && last == null ? null : $"{first} {last}".Trim();
         summary.AssignedTo = reader.IsDBNull(reader.GetOrdinal("assigned_to")) ? null : reader.GetString("assigned_to");
         summary.LatestNote = reader.IsDBNull(reader.GetOrdinal("latest_note")) ? null : reader.GetString("latest_note");
+    }
+
+    // null = allowed. The account that started the application, or the guest key for a guest one.
+    // Applications from before Sprint 2 (no account and no guest key) stay open, as they were.
+    private async Task<IActionResult?> CheckCustomerAccessAsync(MySqlConnection conn, int id)
+    {
+        var cmd = new MySqlCommand("SELECT account_id, guest_key_hash FROM applications WHERE application_id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", id);
+        int? ownerAccount;
+        string? guestKeyHash;
+        await using (var reader = await cmd.ExecuteReaderAsync())
+        {
+            if (!await reader.ReadAsync()) return NotFound(new { error = $"Application {id} not found." });
+            ownerAccount = reader.IsDBNull(0) ? null : reader.GetInt32(0);
+            guestKeyHash = reader.IsDBNull(1) ? null : reader.GetString(1);
+        }
+
+        if (ownerAccount != null)
+        {
+            var accountId = await CustomerTokenAuthHandler.CurrentAccountIdAsync(HttpContext);
+            return accountId == ownerAccount ? null
+                : StatusCode(403, new { error = "This application is saved to an account. Sign in to that account to continue it." });
+        }
+        if (guestKeyHash != null)
+        {
+            var guestKey = Request.Headers["X-Guest-Key"].ToString().Trim();
+            return guestKey.Length > 0 && StaffTokens.Hash(guestKey) == guestKeyHash ? null
+                : StatusCode(403, new { error = "This application was started on another device or browser, so it can't be opened here." });
+        }
+        return null;
     }
 
     private static async Task<string?> GetStatusAsync(MySqlConnection conn, int id)

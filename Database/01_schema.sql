@@ -32,6 +32,8 @@ DROP TABLE IF EXISTS line_state_availability;
 DROP TABLE IF EXISTS insurance_lines;
 DROP TABLE IF EXISTS states;
 DROP TABLE IF EXISTS customers;
+DROP TABLE IF EXISTS customer_sessions;
+DROP TABLE IF EXISTS customer_accounts;
 DROP TABLE IF EXISTS staff_sessions;
 DROP TABLE IF EXISTS staff_users;
 SET FOREIGN_KEY_CHECKS = 1;
@@ -132,6 +134,26 @@ CREATE TABLE customers (
   FOREIGN KEY (state_code) REFERENCES states(state_code)
 );
 
+-- Optional customer sign-in (mockup 1), so a customer can save an application
+-- and finish it later on any device. Customers can also apply as a guest.
+CREATE TABLE customer_accounts (
+  account_id    INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  email         VARCHAR(255) NOT NULL UNIQUE,
+  first_name    VARCHAR(100) NOT NULL,
+  last_name     VARCHAR(100) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,             -- salted PBKDF2, never plain text
+  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Signed-in customer sessions (POST /api/customer/login). Only a SHA-256 hash of each token is stored.
+CREATE TABLE customer_sessions (
+  token_hash  CHAR(64)  NOT NULL PRIMARY KEY,
+  account_id  INT       NOT NULL,
+  created_at  DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at  DATETIME  NOT NULL,
+  FOREIGN KEY (account_id) REFERENCES customer_accounts(account_id) ON DELETE CASCADE
+);
+
 -- ---------------------------------------------------------------------
 -- 3. Applications + reviewer workflow
 -- ---------------------------------------------------------------------
@@ -151,7 +173,12 @@ CREATE TABLE applications (
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   submitted_at    DATETIME NULL,
+  -- Who may keep editing it: the signed-in account that started it, or (guests)
+  -- whoever holds the guest key the API returned. Only the key's SHA-256 hash is stored.
+  account_id      INT      NULL,
+  guest_key_hash  CHAR(64) NULL,
   FOREIGN KEY (customer_id)       REFERENCES customers(customer_id),
+  FOREIGN KEY (account_id)        REFERENCES customer_accounts(account_id),
   FOREIGN KEY (state_code)        REFERENCES states(state_code),
   FOREIGN KEY (assigned_staff_id) REFERENCES staff_users(staff_id),
   INDEX idx_app_status (status)

@@ -302,3 +302,89 @@ body {
     padding-top: 0.75rem;
     color: #495057;
 }
+
+/* ---------------- Sprint 2: sign in, saved applications, address lookup ---------------- */
+
+.auth-tabs .nav-link {
+    color: var(--brand-primary);
+}
+
+.auth-tabs .nav-link.active {
+    background-color: var(--brand-primary);
+    color: #fff;
+}
+
+/* "or" with a line on each side, between the sign-in forms and the guest button */
+.auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1.25rem 0;
+    color: #6c757d;
+    font-size: 0.875rem;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid #dee2e6;
+}
+
+.saved-apps-card {
+    border-left: 4px solid var(--brand-primary);
+}
+
+/* Suggestion list under the street field */
+.address-field {
+    position: relative;
+}
+
+.address-suggestions {
+    position: absolute;
+    top: 100%;
+    left: calc(var(--bs-gutter-x) * 0.5);
+    right: calc(var(--bs-gutter-x) * 0.5);
+    z-index: 1050;
+    margin-top: 2px;
+    max-height: 18rem;
+    overflow-y: auto;
+}
+
+.address-suggestions [data-index] {
+    cursor: pointer;
+}
+
+.address-suggestions [data-index].active {
+    background-color: var(--brand-primary-light);
+    color: var(--brand-text);
+    border-color: var(--brand-primary-border);
+}
+
+.address-attribution {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+}
+
+/* Picked from the lookup: a check mark in the field */
+.form-control.address-verified:not(:invalid) {
+    border-color: #198754;
+    padding-right: calc(1.5em + 0.75rem);
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3e%3cpath fill='%23198754' d='M2.3 6.73.6 4.53c-.4-1.04.46-1.4 1.1-.8l1.1 1.4 3.4-3.8c.6-.63 1.6-.27 1.2.7l-4 4.6c-.43.5-.8.4-1.1.1z'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right calc(0.375em + 0.1875rem) center;
+    background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem);
+}
+
+/* "More about your home" optional questions */
+.optional-details {
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    background-color: #fafbfc;
+}
+
+.optional-details > summary {
+    cursor: pointer;
+    font-weight: 600;
+}

@@ -21,9 +21,15 @@
 
     <!-- Top navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark valent-navbar">
-        <div class="container">
+        <div class="container flex-wrap gap-2">
             <a class="navbar-brand fw-bold" href="#" id="brandHome">Valent&nbsp;Partners</a>
-            <span class="navbar-text text-white-50 d-none d-md-inline">AI Insurance Quote &amp; Application Assistant &mdash; Coverage Explorer</span>
+            <span class="navbar-text text-white-50 d-none d-lg-inline me-auto">AI Insurance Quote &amp; Application Assistant &mdash; Coverage Explorer</span>
+            <!-- Filled by renderAccountNav() in index.js -->
+            <div class="d-flex align-items-center gap-2 ms-auto" id="accountNav">
+                <span class="text-white-50 small text-nowrap" id="accountLabel"></span>
+                <button type="button" class="btn btn-sm btn-outline-light d-none" id="navSignInBtn">Sign in</button>
+                <button type="button" class="btn btn-sm btn-outline-light d-none" id="navSignOutBtn">Sign out</button>
+            </div>
         </div>
     </nav>
 
@@ -36,11 +42,91 @@
 
     <main class="container pb-5">
 
+        <!-- ============ SIGN IN / CREATE ACCOUNT / GUEST (first screen) ============ -->
+        <section id="screen-auth" class="app-screen d-none">
+            <div class="row justify-content-center pt-4">
+                <div class="col-12 col-md-8 col-lg-5">
+                    <div class="text-center mb-4">
+                        <h1 class="fw-bold">Welcome to Valent Partners</h1>
+                        <p class="text-muted mb-0">Sign in to save your application and finish it later, or continue as a guest.</p>
+                    </div>
+                    <div class="alert state-mock-banner small d-none" id="authContext" role="status"></div>
+                    <div class="card shadow-sm p-3 p-md-4">
+                        <div class="nav nav-pills nav-fill mb-3 auth-tabs" role="tablist">
+                            <button type="button" class="nav-link active" role="tab" aria-selected="true" data-auth-tab="signin">Sign In</button>
+                            <button type="button" class="nav-link" role="tab" aria-selected="false" data-auth-tab="register">Create Account</button>
+                        </div>
+                        <div class="alert alert-danger small d-none" id="authError" role="alert"></div>
+
+                        <form id="signInForm" novalidate>
+                            <div class="mb-3">
+                                <label for="signInEmail" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="signInEmail" required maxlength="255" autocomplete="username">
+                                <div class="invalid-feedback">Enter your email address.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="signInPassword" class="form-label">Password</label>
+                                <input type="password" class="form-control" id="signInPassword" required autocomplete="current-password">
+                                <div class="invalid-feedback">Enter your password.</div>
+                            </div>
+                            <button type="submit" class="btn valent-btn-primary w-100">Sign In</button>
+                        </form>
+
+                        <form id="registerForm" class="d-none" novalidate>
+                            <div class="row g-3 mb-3">
+                                <div class="col-12 col-sm-6">
+                                    <label for="regFirst" class="form-label">First name</label>
+                                    <input type="text" class="form-control" id="regFirst" required maxlength="100" autocomplete="given-name">
+                                    <div class="invalid-feedback">Enter your first name.</div>
+                                </div>
+                                <div class="col-12 col-sm-6">
+                                    <label for="regLast" class="form-label">Last name</label>
+                                    <input type="text" class="form-control" id="regLast" required maxlength="100" autocomplete="family-name">
+                                    <div class="invalid-feedback">Enter your last name.</div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="regEmail" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="regEmail" required maxlength="255" autocomplete="email">
+                                <div class="invalid-feedback">Enter a valid email address.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="regPassword" class="form-label">Password</label>
+                                <input type="password" class="form-control" id="regPassword" required minlength="8" autocomplete="new-password" aria-describedby="regPasswordHelp">
+                                <div class="invalid-feedback">Use at least 8 characters.</div>
+                                <div class="form-text" id="regPasswordHelp">At least 8 characters. <strong>Prototype: don&rsquo;t reuse a real password.</strong></div>
+                            </div>
+                            <button type="submit" class="btn valent-btn-primary w-100">Create Account</button>
+                        </form>
+
+                        <!-- Hidden when this screen was opened from "Save & Finish Later" -->
+                        <div id="guestChoice">
+                            <div class="auth-divider"><span>or</span></div>
+                            <button type="button" class="btn valent-btn-outline btn-lg w-100" id="guestBtn">Continue as Guest</button>
+                            <p class="form-text text-center mb-0 mt-2">No account needed to apply. Your progress is saved on this device, and you can create an account any time to finish on another one.</p>
+                        </div>
+                        <button type="button" class="btn btn-link w-100 mt-2 d-none" id="authBackBtn">&larr; Back to my application</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- ============ SCREEN 1: Get Started (landing) ============ -->
-        <section id="screen-start" class="app-screen">
+        <section id="screen-start" class="app-screen d-none">
             <div class="text-center mb-4">
                 <h1 class="fw-bold">Find the Right Coverage, Faster</h1>
                 <p class="lead text-muted mb-0">Homeowners, Flood, Jewelry, and Auto insurance &mdash; how would you like to get started?</p>
+            </div>
+
+            <!-- Saved applications: the account's (signed in) or this device's (guest). See renderSavedApplications(). -->
+            <div class="row justify-content-center mb-4 d-none" id="savedAppsPanel">
+                <div class="col-12 col-lg-9">
+                    <div class="card shadow-sm p-3 saved-apps-card">
+                        <h2 class="h6 fw-bold mb-1" id="savedAppsTitle">Your applications</h2>
+                        <div class="alert alert-danger small py-2 mb-2 d-none" id="savedAppsError" role="alert"></div>
+                        <div class="list-group list-group-flush" id="savedAppsList"></div>
+                    </div>
+                </div>
             </div>
 
             <div class="row g-3 justify-content-center">
@@ -140,7 +226,7 @@
                         <label for="stateSelect" class="form-label fw-semibold">Your State</label>
                         <select class="form-select" id="stateSelect" aria-describedby="stateHelp"></select>
                         <div id="stateHelp" class="form-text">
-                            This prototype covers Alabama, Texas, and New York. Requirements differ by state &mdash; you can compare them while exploring coverage.
+                            This prototype covers Alabama, Texas, and New York, with North Carolina coming next. Requirements differ by state &mdash; you can compare them while exploring coverage.
                         </div>
 
                         <button type="button" class="btn valent-btn-primary btn-lg w-100 mt-4" id="exploreCoverageBtn" disabled>
@@ -365,46 +451,224 @@
                         <form class="app-step d-none" data-step="2" novalidate>
                             <fieldset data-lines="homeowners flood">
                                 <h3 class="h5 mb-3">Property Details</h3>
-                                <div class="mb-3">
-                                    <label for="street" class="form-label">Street address</label>
-                                    <input type="text" class="form-control" id="street" name="street" required maxlength="200" autocomplete="street-address">
-                                    <div class="invalid-feedback">Enter the property's street address.</div>
+                                <div class="row g-3">
+                                    <!-- Google address lookup (see ADDRESS LOOKUP in index.js). Typing still works without it. -->
+                                    <div class="col-12 col-md-9 address-field">
+                                        <label for="street" class="form-label">Street address</label>
+                                        <input type="text" class="form-control" id="street" name="street" required maxlength="200" autocomplete="off"
+                                               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="addressSuggestions" aria-describedby="addressLookupStatus">
+                                        <ul class="list-group address-suggestions shadow d-none" id="addressSuggestions" role="listbox" aria-label="Address suggestions"></ul>
+                                        <div class="invalid-feedback" id="streetError">Enter the property's street address.</div>
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <label for="unit" class="form-label">Unit / Apt <span class="text-muted" id="unitOptional">(optional)</span></label>
+                                        <input type="text" class="form-control" id="unit" name="unit" maxlength="20" autocomplete="off" placeholder="e.g. 4B">
+                                        <div class="invalid-feedback">Enter your unit number.</div>
+                                        <div class="form-text" id="unitHint">For condos, duplexes, and apartments.</div>
+                                    </div>
                                 </div>
+                                <div class="form-text mb-3" id="addressLookupStatus" aria-live="polite"></div>
+                                <!-- "google" when picked from the lookup, "manual" when typed. Not shown in the review list. -->
+                                <input type="hidden" name="address_verified" id="addressVerified" value="manual">
                                 <div class="row g-3 mb-3">
-                                    <div class="col-12 col-md-7">
+                                    <div class="col-12 col-md-5">
                                         <label for="city" class="form-label">City</label>
                                         <input type="text" class="form-control" id="city" name="city" required maxlength="100">
                                         <div class="invalid-feedback">Enter a city.</div>
                                     </div>
-                                    <div class="col-12 col-md-5">
+                                    <div class="col-7 col-md-4">
+                                        <label for="county" class="form-label">County <span class="text-muted">(optional)</span></label>
+                                        <input type="text" class="form-control" id="county" name="county" maxlength="100">
+                                        <div class="form-text">Filled in by the address lookup.</div>
+                                    </div>
+                                    <div class="col-5 col-md-3">
                                         <label for="zip" class="form-label">ZIP code</label>
-                                        <input type="text" class="form-control" id="zip" name="zip" required pattern="\d{5}" inputmode="numeric" maxlength="5" autocomplete="postal-code">
+                                        <input type="text" class="form-control" id="zip" name="zip" required pattern="\d{5}" inputmode="numeric" maxlength="5" autocomplete="off">
                                         <div class="invalid-feedback">Enter a 5-digit ZIP code.</div>
                                     </div>
                                 </div>
                                 <div class="row g-3 mb-3">
-                                    <div class="col-12 col-md-4">
+                                    <div class="col-12 col-md-6">
                                         <label for="homeType" class="form-label">Home type</label>
                                         <select class="form-select" id="homeType" name="home_type" required>
                                             <option value="">Choose...</option>
                                             <option value="single_family">Single-family house</option>
                                             <option value="townhouse">Townhouse</option>
                                             <option value="condo">Condo</option>
+                                            <option value="duplex">Duplex / 2&ndash;4 unit home</option>
                                             <option value="mobile">Mobile / manufactured</option>
                                         </select>
                                         <div class="invalid-feedback">Choose a home type.</div>
                                     </div>
-                                    <div class="col-6 col-md-4">
+                                    <div class="col-12 col-md-6">
+                                        <label for="stories" class="form-label">Number of stories</label>
+                                        <select class="form-select" id="stories" name="stories" required>
+                                            <option value="">Choose...</option>
+                                            <option value="1">1</option>
+                                            <option value="1.5">1&frac12;</option>
+                                            <option value="2">2</option>
+                                            <option value="2.5">2&frac12;</option>
+                                            <option value="3">3</option>
+                                            <option value="4+">4 or more</option>
+                                        </select>
+                                        <div class="invalid-feedback">Choose the number of stories.</div>
+                                    </div>
+                                </div>
+                                <div class="row g-3 mb-3">
+                                    <div class="col-6">
                                         <label for="yearBuilt" class="form-label">Year built</label>
                                         <input type="number" class="form-control" id="yearBuilt" name="year_built" required min="1800">
                                         <div class="invalid-feedback">Enter a valid year.</div>
                                     </div>
-                                    <div class="col-6 col-md-4">
+                                    <div class="col-6">
                                         <label for="squareFeet" class="form-label">Square feet</label>
                                         <input type="number" class="form-control" id="squareFeet" name="square_feet" required min="100" max="50000">
                                         <div class="invalid-feedback">Enter the home's size.</div>
+                                        <div class="form-text">Don&rsquo;t know it? Use <strong>Save &amp; Finish Later</strong> and come back.</div>
                                     </div>
                                 </div>
+                            </fieldset>
+
+                            <!-- Homeowners underwriting: required "last updated" years, then optional questions
+                                 like the ones on other insurers' quote forms. Feeds the preliminary state rules. -->
+                            <fieldset data-lines="homeowners">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-12 col-md-6">
+                                        <label for="roofYear" class="form-label">Year the roof was installed or last replaced</label>
+                                        <input type="number" class="form-control year-since-built" id="roofYear" name="roof_year" required min="1800" placeholder="e.g. 2015">
+                                        <div class="invalid-feedback">Enter a year between the year built and this year.</div>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <label for="lastUpdatedYear" class="form-label">Year of the last major update</label>
+                                        <input type="number" class="form-control year-since-built" id="lastUpdatedYear" name="last_updated_year" required min="1800" placeholder="e.g. 2018" aria-describedby="lastUpdatedHelp">
+                                        <div class="invalid-feedback">Enter a year between the year built and this year.</div>
+                                        <div class="form-text" id="lastUpdatedHelp">Electrical, plumbing, or heating/cooling. Never updated? Enter the year built.</div>
+                                    </div>
+                                </div>
+
+                                <details class="optional-details mb-3">
+                                    <summary>More about your home <span class="text-muted fw-normal">(optional &mdash; helps your specialist give a more accurate quote)</span></summary>
+                                    <div class="row g-3 pt-3">
+                                        <div class="col-12 col-md-6">
+                                            <label for="occupancy" class="form-label">How is the home used?</label>
+                                            <select class="form-select" id="occupancy" name="occupancy">
+                                                <option value="">Choose...</option>
+                                                <option value="primary">I live here (main home)</option>
+                                                <option value="secondary">Second / vacation home</option>
+                                                <option value="rental">Rented out to someone else</option>
+                                                <option value="vacant">Vacant</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-12 col-md-6">
+                                            <label for="constructionType" class="form-label">Exterior walls</label>
+                                            <select class="form-select" id="constructionType" name="construction_type">
+                                                <option value="">Choose...</option>
+                                                <option value="frame">Wood frame / siding</option>
+                                                <option value="masonry">Brick, block, or stone</option>
+                                                <option value="masonry_veneer">Brick or stone veneer</option>
+                                                <option value="stucco">Stucco</option>
+                                                <option value="other">Other / not sure</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-12 col-md-6">
+                                            <label for="roofMaterial" class="form-label">Roof material</label>
+                                            <select class="form-select" id="roofMaterial" name="roof_material">
+                                                <option value="">Choose...</option>
+                                                <option value="asphalt">Asphalt shingle</option>
+                                                <option value="metal">Metal</option>
+                                                <option value="tile">Clay or concrete tile</option>
+                                                <option value="slate">Slate</option>
+                                                <option value="wood">Wood shake</option>
+                                                <option value="flat">Flat / built-up</option>
+                                                <option value="other">Other / not sure</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-12 col-md-6">
+                                            <label for="roofCertification" class="form-label">Storm-resistant roof?</label>
+                                            <select class="form-select" id="roofCertification" name="roof_certification">
+                                                <option value="">Choose...</option>
+                                                <option value="fortified">Yes, FORTIFIED certificate</option>
+                                                <option value="class4">Yes, Class 4 impact-resistant shingles</option>
+                                                <option value="none">No</option>
+                                                <option value="unknown">Not sure</option>
+                                            </select>
+                                            <div class="form-text">May qualify for a wind or hail discount.</div>
+                                        </div>
+                                        <div class="col-12 col-md-6">
+                                            <label for="foundationType" class="form-label">Foundation</label>
+                                            <select class="form-select" id="foundationType" name="foundation_type">
+                                                <option value="">Choose...</option>
+                                                <option value="slab">Slab</option>
+                                                <option value="crawlspace">Crawl space</option>
+                                                <option value="basement">Basement</option>
+                                                <option value="piers">Piers / pilings (raised)</option>
+                                                <option value="other">Other / not sure</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-12 col-md-6">
+                                            <label for="priorClaims" class="form-label">Home insurance claims in the last 5 years</label>
+                                            <select class="form-select" id="priorClaims" name="prior_claims">
+                                                <option value="">Choose...</option>
+                                                <option value="0">None</option>
+                                                <option value="1">1</option>
+                                                <option value="2">2</option>
+                                                <option value="3plus">3 or more</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-12 col-md-4">
+                                            <span class="form-label d-block">Swimming pool?</span>
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="radio" name="has_pool" id="poolYes" value="yes">
+                                                <label class="form-check-label" for="poolYes">Yes</label>
+                                            </div>
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="radio" name="has_pool" id="poolNo" value="no">
+                                                <label class="form-check-label" for="poolNo">No</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-12 col-md-4">
+                                            <span class="form-label d-block">Trampoline?</span>
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="radio" name="has_trampoline" id="trampolineYes" value="yes">
+                                                <label class="form-check-label" for="trampolineYes">Yes</label>
+                                            </div>
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="radio" name="has_trampoline" id="trampolineNo" value="no">
+                                                <label class="form-check-label" for="trampolineNo">No</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-12 col-md-4">
+                                            <span class="form-label d-block">Any dogs?</span>
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="radio" name="has_dog" id="dogYes" value="yes">
+                                                <label class="form-check-label" for="dogYes">Yes</label>
+                                            </div>
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="radio" name="has_dog" id="dogNo" value="no">
+                                                <label class="form-check-label" for="dogNo">No</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-12">
+                                            <span class="form-label d-block">Safety features</span>
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="checkbox" name="protective_devices" id="devSmoke" value="monitored_smoke">
+                                                <label class="form-check-label" for="devSmoke">Monitored smoke / fire alarm</label>
+                                            </div>
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="checkbox" name="protective_devices" id="devBurglar" value="burglar_alarm">
+                                                <label class="form-check-label" for="devBurglar">Burglar alarm</label>
+                                            </div>
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="checkbox" name="protective_devices" id="devSprinklers" value="sprinklers">
+                                                <label class="form-check-label" for="devSprinklers">Fire sprinklers</label>
+                                            </div>
+                                            <div class="form-check form-check-inline">
+                                                <input class="form-check-input" type="checkbox" name="protective_devices" id="devDeadbolts" value="deadbolts">
+                                                <label class="form-check-label" for="devDeadbolts">Deadbolt locks</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </details>
                             </fieldset>
 
                             <fieldset data-lines="flood">
@@ -498,6 +762,54 @@
                                     <div class="invalid-feedback">Enter a valid phone number.</div>
                                 </div>
                             </div>
+
+                            <!-- Mailing address. The insured property has to be a street address, so a
+                                 P.O. Box or military (APO/FPO/DPO) address is asked for here instead. -->
+                            <div class="mb-3">
+                                <span class="form-label d-block">Mailing address</span>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="mailingPoMilitary" name="mailing_po_military" value="yes"
+                                           data-review-label="P.O. Box / military mailing address" data-review-value="Yes">
+                                    <label class="form-check-label" for="mailingPoMilitary">My mailing address is a P.O. Box or a military address (APO / FPO / DPO)</label>
+                                </div>
+                                <div class="form-text mt-0" id="mailingDefaultNote"></div>
+                            </div>
+                            <!-- Enabled only when the box above is checked (disabled fields aren't validated or sent) -->
+                            <fieldset class="mb-3 d-none" id="mailingFields" disabled>
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-5">
+                                        <label for="mailingType" class="form-label">Address type</label>
+                                        <select class="form-select" id="mailingType" name="mailing_type" required>
+                                            <option value="">Choose...</option>
+                                            <option value="po_box">P.O. Box</option>
+                                            <option value="APO">APO (Army / Air Force)</option>
+                                            <option value="FPO">FPO (Navy / Marine Corps)</option>
+                                            <option value="DPO">DPO (U.S. embassies)</option>
+                                        </select>
+                                        <div class="invalid-feedback">Choose the address type.</div>
+                                    </div>
+                                    <div class="col-12 col-md-7">
+                                        <label for="mailingLine1" class="form-label" id="mailingLine1Label">Box number</label>
+                                        <input type="text" class="form-control" id="mailingLine1" name="mailing_line1" required maxlength="100" pattern=".*\d.*">
+                                        <div class="invalid-feedback" id="mailingLine1Error">Include the box or unit number.</div>
+                                    </div>
+                                    <div class="col-12 col-md-5">
+                                        <label for="mailingCity" class="form-label">City</label>
+                                        <input type="text" class="form-control" id="mailingCity" name="mailing_city" required maxlength="100">
+                                        <div class="invalid-feedback">Enter a city.</div>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <label for="mailingState" class="form-label">State</label>
+                                        <select class="form-select" id="mailingState" name="mailing_state" required></select>
+                                        <div class="invalid-feedback">Choose a state.</div>
+                                    </div>
+                                    <div class="col-6 col-md-4">
+                                        <label for="mailingZip" class="form-label">ZIP code</label>
+                                        <input type="text" class="form-control" id="mailingZip" name="mailing_zip" required pattern="\d{5}" inputmode="numeric" maxlength="5">
+                                        <div class="invalid-feedback">Enter a 5-digit ZIP code.</div>
+                                    </div>
+                                </div>
+                            </fieldset>
                         </form>
 
                         <!-- STEP 4: Quote -->
@@ -533,9 +845,13 @@
                             <button type="button" class="btn valent-btn-primary mt-2" id="appDoneHomeBtn">Back to Home</button>
                         </div>
 
-                        <div class="d-flex justify-content-between gap-2 mt-4" id="appNav">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-4" id="appNav">
                             <button type="button" class="btn valent-btn-outline" id="appBackBtn">&larr; Back</button>
-                            <button type="button" class="btn valent-btn-primary" id="appNextBtn">Next &rarr;</button>
+                            <div class="d-flex flex-wrap align-items-center justify-content-end gap-2 ms-auto">
+                                <span class="small text-muted" id="autosaveStatus" aria-live="polite"></span>
+                                <button type="button" class="btn valent-btn-outline" id="saveLaterBtn">Save &amp; Finish Later</button>
+                                <button type="button" class="btn valent-btn-primary" id="appNextBtn">Next &rarr;</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -704,7 +1020,7 @@
     </main>
 
     <footer class="text-center text-muted small py-4 border-top">
-        Valent Partners &mdash; Sprint 1 Mockup 1 &mdash; Prototype for internal review only. No real quotes, pricing, or eligibility decisions are made on this page.
+        Valent Partners &mdash; Sprint 2 Mockup 1 &mdash; Prototype for internal review only. No real quotes, pricing, or eligibility decisions are made on this page.
     </footer>
 
     <!-- Coverage detail modal -->
@@ -736,6 +1052,20 @@
                 <div class="modal-footer">
                     <button type="button" class="btn valent-btn-primary" data-bs-dismiss="modal">Got it</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- "Save & Finish Later" modal (filled by showSaveLaterModal() in index.js) -->
+    <div class="modal fade" id="saveLaterModal" tabindex="-1" aria-hidden="true" aria-labelledby="saveLaterModalLabel">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="saveLaterModalLabel">Your Progress Is Saved</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="saveLaterBody"></div>
+                <div class="modal-footer" id="saveLaterFooter"></div>
             </div>
         </div>
     </div>

@@ -133,8 +133,8 @@
                     <h2 class="h5 section-heading">Confusion / Friction Metrics</h2>
 
                     <div class="alert metric-clarification small">
-                        <strong>Where these numbers come from:</strong> the <code>analytics_events</code> table. Right now only <code>03_mock_data.sql</code> fills it &mdash; the customer form doesn't send tracking events yet, so new applications show up in the funnel but not here.
-                        "Dwell time" below means time on a step, not hover or field-focus time. What counts as a "quick exit" still needs to be agreed with the client.
+                        <strong>Where these numbers come from:</strong> the <code>analytics_events</code> table, filled by the customer form as people use it (plus sample rows from <code>03_mock_data.sql</code>).
+                        "Dwell time" means time on a step, not hover or field-focus time. <strong>Quick exit</strong> uses your definition: leaving on one of the first two pages where the customer has to enter information (step 1 Coverage, step 2 Details).
                     </div>
 
                     <div class="table-responsive">
@@ -145,7 +145,7 @@
                                     <th>Visits</th>
                                     <th>Avg Dwell Time</th>
                                     <th>Exit Rate</th>
-                                    <th>Quick-Exit Rate</th>
+                                    <th title="Exits on step 1 or 2 (client definition)">Quick Exits</th>
                                     <th>Drop-off</th>
                                     <th>Validation Errors</th>
                                     <th>Back Clicks</th>
@@ -153,6 +153,31 @@
                                 </tr>
                             </thead>
                             <tbody id="frictionTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ VISIT TIME & EXITS ============ -->
+        <section class="mb-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h2 class="h5 section-heading">Visit Time &amp; Where Visitors Leave</h2>
+                    <p class="text-muted small mb-3">Each visit to the customer site, timed from opening it to leaving or closing it. The state filter uses the state the visitor picked; the line filter keeps visits that started an application for that line.</p>
+                    <div class="row g-3 mb-3" id="visitKpiRow"></div>
+                    <div class="table-responsive">
+                        <table class="table align-middle bg-white mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Left From</th>
+                                    <th>Exits</th>
+                                    <th>Share of Exits</th>
+                                    <th>Avg. Time on That Page</th>
+                                    <th>Avg. Whole Visit</th>
+                                </tr>
+                            </thead>
+                            <tbody id="exitPagesBody"></tbody>
                         </table>
                     </div>
                 </div>
@@ -233,7 +258,29 @@
                             </select>
                         </div>
                     </div>
-                    <p class="text-muted small mb-3">Submitted applications matching the filters above. Click a row to see the customer's answers and approve, reject, or escalate it.</p>
+                    <p class="text-muted small mb-2">Submitted applications matching the filters above. Click a row to see the customer's answers and review flags, then approve, reject, or escalate it.</p>
+                    <button class="btn btn-sm btn-link px-0 mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#statusGuide" aria-expanded="false" aria-controls="statusGuide">
+                        What does each status mean?
+                    </button>
+                    <div class="collapse" id="statusGuide">
+                        <div class="table-responsive mb-3">
+                            <table class="table table-sm table-bordered bg-white small mb-1 status-guide">
+                                <thead>
+                                    <tr><th>Status</th><th>When it applies</th><th>Set by</th><th>Next step</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td><span class="queue-status-pill queue-status-denied">In progress</span></td><td>Started but not submitted. Progress is saved, so the customer can come back.</td><td>Customer</td><td>Customer finishes and submits</td></tr>
+                                    <tr><td><span class="queue-status-pill queue-status-new">New</span></td><td>All five steps are complete and the customer confirmed their answers are accurate.</td><td>Customer</td><td>An agent starts the review</td></tr>
+                                    <tr><td><span class="queue-status-pill queue-status-pending">Under review</span></td><td>An agent is checking the answers, uploaded documents, and review flags.</td><td>Agent</td><td>Approve, reject, or escalate</td></tr>
+                                    <tr><td><span class="queue-status-pill queue-status-escalated">Escalated</span></td><td>A <strong>specialist</strong> rule applies (for example coastal Texas wind, flood zone V, a roof over 20 years old, 3+ claims, a mobile home, a rented-out home, a business-use vehicle, or a jewelry item over $25,000), or the agent needs a specialist or supervisor. A note is required.</td><td>Agent</td><td>Specialist decides</td></tr>
+                                    <tr><td><span class="queue-status-pill queue-status-approved">Approved</span></td><td>Answers and documents are verified, no specialist flags are left open, and it fits the state's eligibility rules. Ready for a final carrier quote; it doesn't bind coverage.</td><td>Agent</td><td>Send the customer the final quote</td></tr>
+                                    <tr><td><span class="queue-status-pill queue-status-denied">Rejected</span></td><td>Outside eligibility (line not offered in the state, or a property, driver, or item the carrier won't cover), or key information can't be verified. A note is required and saved as the reason.</td><td>Agent</td><td>Customer is told why</td></tr>
+                                    <tr><td><span class="queue-status-pill queue-status-denied">Abandoned</span></td><td>Proposed: in progress with no activity for 30 days. Not automatic yet.</td><td>System</td><td>&mdash;</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="small text-muted"><span class="badge mock-badge me-1">PROPOSED</span> Our first draft of the criteria for client review.</p>
+                    </div>
                     <div class="table-responsive">
                         <table class="table table-hover align-middle bg-white mb-0" id="queueTable">
                             <thead>
@@ -252,6 +299,27 @@
                         </table>
                     </div>
                     <p class="small text-muted mb-0 mt-2" id="queueEmptyMsg"></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ PRELIMINARY ELIGIBILITY RULES ============ -->
+        <section class="mb-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                        <h2 class="h5 section-heading mb-0">Preliminary Eligibility &amp; Quote Rules</h2>
+                        <span class="badge mock-badge">FOR CLIENT REVIEW</span>
+                    </div>
+                    <p class="text-muted small mb-3">Our first idea of what should drive eligibility in each state, such as wind and hail risk in Texas for homes and cars. These rules set the demo estimate and the review flags agents see on each application. Is this on the right track? The state filter above narrows the list.</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-top bg-white mb-0">
+                            <thead>
+                                <tr><th>State</th><th>Line</th><th>When</th><th>What happens</th></tr>
+                            </thead>
+                            <tbody id="rulesTableBody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </section>
@@ -278,7 +346,9 @@
                                         <li><strong>Avg. time to submit</strong> &mdash; average time from starting an application to submitting it.</li>
                                         <li><strong>Funnel</strong> &mdash; how many applications reached each step (from <code>applications.current_step</code>).</li>
                                         <li><strong>Dwell time</strong> &mdash; average time on a step before finishing it or leaving the site.</li>
-                                        <li><strong>Exit / quick-exit rate</strong> &mdash; % of visits to a step that ended with the customer leaving the site (quick = within the threshold below).</li>
+                                        <li><strong>Exit rate</strong> &mdash; % of visits to a step that ended with the customer leaving the site.</li>
+                                        <li><strong>Quick exit</strong> &mdash; leaving on step 1 (Coverage) or step 2 (Details), the first two pages where the customer enters information. The KPI is the % of started, unsubmitted applications that ended that way.</li>
+                                        <li><strong>Visit time</strong> &mdash; time from opening the customer site to leaving or closing it (the browser sends a final event as the tab closes).</li>
                                         <li><strong>Validation errors</strong> &mdash; % of visits that hit at least one form error.</li>
                                         <li><strong>Back clicks</strong> &mdash; times customers pressed Back from that step.</li>
                                     </ul>
@@ -293,8 +363,8 @@
                             <div id="accThresholds" class="accordion-collapse collapse" data-bs-parent="#assumptionsAccordion">
                                 <div class="accordion-body small">
                                     <ul class="mb-0">
-                                        <li>A "quick exit" is leaving within <span id="quickExitSeconds">10</span> seconds. This is a placeholder, not a client-approved definition.</li>
-                                        <li>"Needs Attention" / "Watch" use a simple score: exit rate + 1.5 &times; quick-exit rate + 1.2 &times; validation-error rate. The cut-offs (45 and 25) are placeholders.</li>
+                                        <li>Quick-exit steps: <span id="quickExitSteps">1, 2</span>, from the client's Sprint 2 review. We read "pages where they are required to enter information" as the Coverage and Details steps, not Type &amp; State (choices only). Please confirm.</li>
+                                        <li>"Needs Attention" / "Watch" use a simple score: exit rate (&times; 1.5 on quick-exit steps) + 1.2 &times; validation-error rate. The cut-offs (45 and 25) are placeholders.</li>
                                     </ul>
                                 </div>
                             </div>
@@ -308,7 +378,8 @@
                                 <div class="accordion-body small">
                                     <ul class="mb-0">
                                         <li>Employee vs. admin permissions (everyone who signs in can do everything today), password resets, and how staff accounts get created.</li>
-                                        <li>Sending tracking events from the customer form to <code>analytics_events</code>.</li>
+                                        <li>Consent banner and retention period for the tracking events the customer form now sends.</li>
+                                        <li>Adding North Carolina (the client's next state) once the current three are refined.</li>
                                         <li>Which metrics belong on the landing dashboard vs. deeper drill-down pages.</li>
                                         <li>Retention, privacy, and consent requirements for behavioral tracking.</li>
                                         <li>Which applicant-level details an agent should be able to open from aggregate analytics.</li>
@@ -325,7 +396,8 @@
                                 <div class="accordion-body small">
                                     <ul class="mb-0">
                                         <li>When you say "hover" or "how long users stay," do you mean page time, field-focus time, actual mouse-hover duration, or something else?</li>
-                                        <li>What should count as leaving "quickly" &mdash; a fixed number of seconds, leaving before interacting, or something else?</li>
+                                        <li>Quick exit: should Type &amp; State count as one of the "first 2 pages," or only Coverage and Details (what we built)?</li>
+                                        <li>Are the preliminary eligibility rules and status criteria on the right track?</li>
                                         <li>Which application steps are most important to monitor closely?</li>
                                         <li>What should happen operationally when the dashboard reveals a problem?</li>
                                         <li>Who should have access to aggregate analytics vs. individual application details?</li>
@@ -343,7 +415,7 @@
     </main>
 
     <footer class="text-center text-muted small py-4 border-top">
-        Valent Partners &mdash; Sprint 1 Mockup 2 &mdash; Agent dashboard prototype for internal review. Requires the API (<code>dotnet run</code> in the API folder).
+        Valent Partners &mdash; Sprint 2 Mockup 2 &mdash; Agent dashboard prototype for internal review. Requires the API (<code>dotnet run</code> in the API folder).
     </footer>
 
     <!-- Step detail modal (funnel + friction table) -->

@@ -1,6 +1,9 @@
 /* Valent Partners - Mockup 1: Customer Coverage Explorer
    Front-end-only prototype. All insurance content below is MOCK / DEMONSTRATION DATA
-   and is not sourced from finalized Valent Partners or carrier business rules. */
+   and is not sourced from finalized Valent Partners or carrier business rules.
+   Sprint 2 client feedback added: optional customer sign-in (or guest), saving an
+   application to finish later, Google address lookup, more property questions, a
+   P.O. Box / military mailing address, and behavior tracking for the agent dashboard. */
 
 (function () {
     'use strict';
@@ -18,6 +21,9 @@
         ['AL', 'Alabama'], ['TX', 'Texas'], ['NY', 'New York']
     ];
     var DEFAULT_STATE = 'AL';
+
+    // Client: refine the three states first; North Carolina is the next one. Shown, not selectable.
+    var NEXT_STATE = ['NC', 'North Carolina'];
 
     // ---------------------------------------------------------------
     // STATE COMPARISON (explorer screen, "Compare Across States")
@@ -451,6 +457,7 @@
         path: null,              // 'apply' or 'explore', chosen on the landing screen
         selectedTypes: [],       // e.g. ['homeowners', 'auto']; more than one = a bundle (apply path only)
         selectedState: DEFAULT_STATE,
+        stateChosen: false,      // the visitor picked a state (sent with tracking events)
         exploreLine: 'homeowners', // which LINE_COVERAGES entry the explorer is showing
         selectedCoverages: [],     // codes from that line picked for comparison
         modalCoverageCode: null
@@ -473,6 +480,7 @@
     // The application in progress. applicationId is null until step 1 is saved.
     var app = {
         applicationId: null,
+        guestKey: null,          // guests only: proves this browser started the application (sent as X-Guest-Key)
         lines: [],               // insurance types on this application
         stateCode: null,
         step: 1,
@@ -487,11 +495,15 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         cacheDom();
+        initTracking();
         populateStateSelect();
+        populateMailingStates();
         bindEvents();
         renderExplorer();
         updateInsuranceCardSelection();
         updateExploreButtonState();
+        loadAddressLookup();
+        restoreCustomer();
     });
 
     function cacheDom() {
@@ -576,6 +588,65 @@
         el.appDoneId = document.getElementById('appDoneId');
         el.appDoneEmail = document.getElementById('appDoneEmail');
         el.appDoneHomeBtn = document.getElementById('appDoneHomeBtn');
+
+        // Sign in / account
+        el.screenAuth = document.getElementById('screen-auth');
+        el.authTabs = document.querySelectorAll('[data-auth-tab]');
+        el.authContext = document.getElementById('authContext');
+        el.authError = document.getElementById('authError');
+        el.signInForm = document.getElementById('signInForm');
+        el.signInEmail = document.getElementById('signInEmail');
+        el.signInPassword = document.getElementById('signInPassword');
+        el.registerForm = document.getElementById('registerForm');
+        el.regFirst = document.getElementById('regFirst');
+        el.regLast = document.getElementById('regLast');
+        el.regEmail = document.getElementById('regEmail');
+        el.regPassword = document.getElementById('regPassword');
+        el.guestChoice = document.getElementById('guestChoice');
+        el.guestBtn = document.getElementById('guestBtn');
+        el.authBackBtn = document.getElementById('authBackBtn');
+        el.accountLabel = document.getElementById('accountLabel');
+        el.navSignInBtn = document.getElementById('navSignInBtn');
+        el.navSignOutBtn = document.getElementById('navSignOutBtn');
+        el.savedAppsPanel = document.getElementById('savedAppsPanel');
+        el.savedAppsTitle = document.getElementById('savedAppsTitle');
+        el.savedAppsError = document.getElementById('savedAppsError');
+        el.savedAppsList = document.getElementById('savedAppsList');
+
+        // Save & finish later
+        el.saveLaterBtn = document.getElementById('saveLaterBtn');
+        el.autosaveStatus = document.getElementById('autosaveStatus');
+        el.saveLaterModalEl = document.getElementById('saveLaterModal');
+        el.saveLaterBody = document.getElementById('saveLaterBody');
+        el.saveLaterFooter = document.getElementById('saveLaterFooter');
+
+        // Property address
+        el.street = document.getElementById('street');
+        el.streetError = document.getElementById('streetError');
+        el.addressSuggestions = document.getElementById('addressSuggestions');
+        el.addressLookupStatus = document.getElementById('addressLookupStatus');
+        el.addressVerified = document.getElementById('addressVerified');
+        el.unit = document.getElementById('unit');
+        el.unitOptional = document.getElementById('unitOptional');
+        el.unitHint = document.getElementById('unitHint');
+        el.city = document.getElementById('city');
+        el.county = document.getElementById('county');
+        el.homeType = document.getElementById('homeType');
+        el.yearsSinceBuilt = document.querySelectorAll('.year-since-built');
+
+        // Mailing address (P.O. Box / military)
+        el.firstName = document.getElementById('firstName');
+        el.lastName = document.getElementById('lastName');
+        el.email = document.getElementById('email');
+        el.mailingPoMilitary = document.getElementById('mailingPoMilitary');
+        el.mailingDefaultNote = document.getElementById('mailingDefaultNote');
+        el.mailingFields = document.getElementById('mailingFields');
+        el.mailingType = document.getElementById('mailingType');
+        el.mailingLine1 = document.getElementById('mailingLine1');
+        el.mailingLine1Label = document.getElementById('mailingLine1Label');
+        el.mailingLine1Error = document.getElementById('mailingLine1Error');
+        el.mailingCity = document.getElementById('mailingCity');
+        el.mailingState = document.getElementById('mailingState');
     }
 
     // ---------------------------------------------------------------
@@ -590,6 +661,11 @@
             if (pair[0] === DEFAULT_STATE) opt.selected = true;
             el.stateSelect.appendChild(opt);
         });
+        var next = document.createElement('option');
+        next.value = NEXT_STATE[0];
+        next.textContent = NEXT_STATE[1] + ' (coming next)';
+        next.disabled = true;
+        el.stateSelect.appendChild(next);
     }
 
     function bindEvents() {
@@ -606,6 +682,7 @@
         onStepClick(el.appStepIndicator, function (step) {
             if (app.busy) return;
             hideAppError();
+            trackStep('step_back');
             if (step === 0) goToScreen('select');
             else showAppStep(step);
         });
@@ -617,6 +694,10 @@
 
         bindRepeatableItems();
         bindCurrentPolicy();
+        bindAccount();
+        bindAutosave();
+        bindAddressLookup();
+        bindMailingAddress();
 
         el.insuranceTypeCards.forEach(function (card) {
             card.addEventListener('click', function () {
@@ -626,6 +707,7 @@
 
         el.stateSelect.addEventListener('change', function () {
             state.selectedState = el.stateSelect.value;
+            state.stateChosen = true;
             renderStateMockBanner();
         });
 
@@ -685,7 +767,9 @@
         goToScreen('select');
     }
 
-    // Opens the application form for the selected insurance type and state.
+    // Opens the application form for the selected insurance types and state, and starts the
+    // application in the database right away, so a visitor who leaves on the first step is
+    // still counted (the client defines a "quick exit" as leaving on step 1 or 2).
     // Re-entering with the same type/state continues the same application.
     function startApplication() {
         var sameApplication = app.applicationId &&
@@ -693,26 +777,50 @@
 
         if (!sameApplication) {
             app.applicationId = null;
+            app.guestKey = null;
             app.lines = state.selectedTypes.slice();
             app.stateCode = state.selectedState;
             app.step = 1;
-            el.appSteps.forEach(function (form) {
-                form.reset();
-                form.classList.remove('was-validated');
-            });
-            resetRepeatableItems();
             app.uploadedPolicyName = null;
-            updateCurrentPolicyFields();
-            showUploadedPolicy();
+            resetApplicationForms();
         }
+        setupApplicationForm();
+        showAppStep(app.step);
+        goToScreen('apply');
+        if (app.applicationId) return;
 
+        setAppBusy(true);
+        ensureApplicationCreated().then(function () {
+            showAppStep(app.step); // again, so step tracking has the application number
+        }).catch(showAppError).then(function () { setAppBusy(false); });
+    }
+
+    // Clears every answer, for a brand-new application
+    function resetApplicationForms() {
+        el.appSteps.forEach(function (form) {
+            form.reset();
+            form.classList.remove('was-validated');
+        });
+        resetRepeatableItems();
+        updateCurrentPolicyFields();
+        showUploadedPolicy();
+        updateMailingFields();
+        setAddressVerified(false);
+        places.wrongState = null;
+        checkPropertyStreet();
+        setAutosaveStatus('');
+    }
+
+    // Titles, date limits, and which questions apply, for app.lines / app.stateCode
+    function setupApplicationForm() {
         var isBundle = app.lines.length > 1;
         el.appTitle.textContent = typesLabel(app.lines) + (isBundle ? ' Bundle Application' : ' Insurance Application');
-        el.appSubtitle.textContent = 'Coverage in ' + stateName(app.stateCode) + '. Your progress is saved after each step.';
+        el.appSubtitle.textContent = 'Coverage in ' + stateName(app.stateCode) + '. Your answers are saved as you go.';
         el.appBundleNote.classList.toggle('d-none', !isBundle);
         el.appBundleLines.textContent = typesLabel(app.lines);
         el.startDate.min = todayIso();
         el.yearBuilt.max = new Date().getFullYear();
+        el.yearsSinceBuilt.forEach(function (input) { input.max = new Date().getFullYear(); });
         el.floodWaitNote.classList.toggle('d-none', !hasLine('flood'));
 
         // Show only the questions for the selected insurance lines (shared questions,
@@ -727,11 +835,16 @@
             fieldset.classList.toggle('d-none', !applies);
         });
 
+        el.mailingDefaultNote.textContent = hasLine('homeowners') || hasLine('flood')
+            ? 'Otherwise, we\'ll send mail to the property address.'
+            : 'Otherwise, your specialist will confirm your mailing address with you.';
+        updateUnitRequirement();
+        updateYearLimits();
+        prefillApplicant();
+
         el.appDone.classList.add('d-none');
         el.appNav.classList.remove('d-none');
         hideAppError();
-        showAppStep(app.step);
-        goToScreen('apply');
     }
 
     // ---------------------------------------------------------------
@@ -784,6 +897,7 @@
     function onContinueClick() {
         if (state.selectedTypes.length === 0) return;
         var type = state.selectedTypes[0];
+        state.stateChosen = true;
 
         if (state.path === 'apply') {
             startApplication();
@@ -1060,7 +1174,8 @@
         });
     }
 
-    function addItem(type) {
+    // quiet: don't move focus to the new card (used when refilling a saved application)
+    function addItem(type, quiet) {
         var list = itemList(type);
         if (list.children.length >= ITEM_TYPES[type].max) return;
 
@@ -1086,7 +1201,7 @@
 
         list.appendChild(card);
         refreshItemList(type);
-        if (list.children.length > 1) {
+        if (list.children.length > 1 && !quiet) {
             var first = card.querySelector('[data-field]');
             if (first) first.focus();
         }
@@ -1218,6 +1333,7 @@
         el.appIdBadge.classList.toggle('d-none', !app.applicationId);
         el.appBackBtn.textContent = step === 1 ? '← Change Selection' : '← Back';
         updateNextButtonText();
+        markStepEntered();
         if (step === 4) {
             renderReview();
             loadQuote();
@@ -1231,6 +1347,7 @@
 
     function onAppBack() {
         hideAppError();
+        trackStep('step_back');
         if (app.step === 1) {
             goToScreen('select');
         } else {
@@ -1241,10 +1358,15 @@
     function onAppNext() {
         if (app.busy) return;
         hideAppError();
+        clearTimeout(autosaveTimer); // this save replaces any pending draft save
 
         var form = currentStepForm();
+        if (app.step === 2) checkPropertyStreet();
         form.classList.add('was-validated');
-        if (!form.checkValidity()) return;
+        if (!form.checkValidity()) {
+            trackValidationError(form);
+            return;
+        }
 
         setAppBusy(true);
         var request;
@@ -1258,6 +1380,7 @@
                 // The file needs the application id, so it's sent after step 1 is saved
                 if (app.step === 1) return syncCurrentPolicyFile();
             }).then(function () {
+                trackStep('step_complete');
                 showAppStep(app.step + 1);
             });
         }
@@ -1273,11 +1396,19 @@
             stateCode: app.stateCode
         }).then(function (result) {
             app.applicationId = result.applicationId;
+            // Guests keep the application on this device so they can come back to it
+            app.guestKey = result.guestKey || null;
+            if (app.guestKey) {
+                writeStorage(localStorage, GUEST_APP_KEY, { applicationId: app.applicationId, guestKey: app.guestKey });
+            }
         });
     }
 
     function submitApplication() {
         return apiRequest('POST', '/applications/' + app.applicationId + '/submit').then(function () {
+            trackStep('step_complete');
+            var guestApp = readStorage(localStorage, GUEST_APP_KEY);
+            if (guestApp && guestApp.applicationId === app.applicationId) writeStorage(localStorage, GUEST_APP_KEY, null);
             el.appSteps.forEach(function (form) { form.classList.add('d-none'); });
             el.appStepItems.forEach(function (item) {
                 item.classList.remove('active');
@@ -1289,6 +1420,7 @@
             el.appDoneEmail.textContent = document.getElementById('email').value;
             el.appDone.classList.remove('d-none');
             app.applicationId = null; // the next application starts fresh
+            app.guestKey = null;
             app.lines = [];
         });
     }
@@ -1401,8 +1533,16 @@
             Object.keys(answers).forEach(function (name) {
                 var value = answers[name];
                 var field = form.querySelector('[name="' + name + '"]');
+                if (field.type === 'hidden') return;          // e.g. address_verified
+                if (value === '' && !field.required) return;  // optional question left blank
                 if (field.tagName === 'SELECT') {
                     value = field.options[field.selectedIndex].text;
+                } else if (field.type === 'checkbox') {
+                    var checked = form.querySelectorAll('[name="' + name + '"]:checked');
+                    value = Array.prototype.map.call(checked, function (box) {
+                        var boxLabel = form.querySelector('label[for="' + box.id + '"]');
+                        return box.dataset.reviewValue || (boxLabel ? boxLabel.textContent.trim() : box.value);
+                    }).join(', ');
                 } else if (field.type === 'radio') {
                     var choice = form.querySelector('[name="' + name + '"]:checked');
                     var choiceLabel = choice && form.querySelector('label[for="' + choice.id + '"]');
@@ -1411,7 +1551,7 @@
                 } else if (/_coverage$/.test(name) && value !== '') {
                     value = formatMoney(parseFloat(value));
                 }
-                addReviewRow(fieldLabel(form, field), value || '—');
+                addReviewRow(field.dataset.reviewLabel || fieldLabel(form, field), value || '—');
             });
 
             var items = collectItems(form);
@@ -1559,6 +1699,7 @@
         app.busy = busy;
         el.appNextBtn.disabled = busy;
         el.appBackBtn.disabled = busy;
+        el.saveLaterBtn.disabled = busy;
         if (busy) el.appNextBtn.textContent = 'Saving...';
         else updateNextButtonText();
     }
@@ -1588,11 +1729,17 @@
     // Sends JSON to the API. Resolves with the parsed response body (or null),
     // rejects with an Error whose message is safe to show the customer.
     // body: a plain object (sent as JSON) or FormData (file uploads; the browser sets the header)
-    function apiRequest(method, path, body) {
+    // Sends the customer's sign-in token and, for a guest application, its guest key.
+    // err.status is the HTTP status for errors from the API.
+    function apiRequest(method, path, body, extraHeaders) {
         var isForm = body instanceof FormData;
+        var headers = Object.assign({}, extraHeaders);
+        if (body && !isForm) headers['Content-Type'] = 'application/json';
+        if (customer) headers.Authorization = 'Bearer ' + customer.token;
+        if (app.guestKey && !headers['X-Guest-Key']) headers['X-Guest-Key'] = app.guestKey;
         return fetch(API_BASE_URL + path, {
             method: method,
-            headers: body && !isForm ? { 'Content-Type': 'application/json' } : {},
+            headers: headers,
             body: isForm ? body : body ? JSON.stringify(body) : undefined
         }).catch(function () {
             throw new Error('We couldn\'t reach the server. Please try again in a moment. ' +
@@ -1601,10 +1748,852 @@
             return response.text().then(function (text) {
                 var data = text ? JSON.parse(text) : null;
                 if (!response.ok) {
-                    throw new Error((data && (data.error || data.title)) || 'Something went wrong (HTTP ' + response.status + ').');
+                    if (response.status === 401 && customer) endCustomerSession('Your sign-in expired. Please sign in again.');
+                    var err = new Error((data && (data.error || data.title)) || 'Something went wrong (HTTP ' + response.status + ').');
+                    err.status = response.status;
+                    throw err;
                 }
                 return data;
             });
+        });
+    }
+
+    // ---------------------------------------------------------------
+    // CUSTOMER ACCOUNTS (optional) AND GUESTS
+    // Signing in lets a customer save an application and finish it on any device.
+    // Guests can apply too: their application is remembered on this device
+    // (GUEST_APP_KEY) and moves into an account if they sign in or sign up later.
+    // ---------------------------------------------------------------
+
+    var CUSTOMER_SESSION_KEY = 'valentCustomerSession'; // localStorage: { token, account }
+    var GUEST_CHOICE_KEY = 'valentGuest';               // sessionStorage: chose "Continue as Guest" this visit
+    var GUEST_APP_KEY = 'valentGuestApplication';       // localStorage: { applicationId, guestKey }
+
+    var customer = null;      // signed-in customer: { token, account }
+    var authReturnTo = null;  // 'apply' when sign-in was opened from "Save & Finish Later"
+
+    // Storage can be unavailable (private windows, blocked site data); everything still works for this page
+    function readStorage(storage, key) {
+        try { return JSON.parse(storage.getItem(key)); } catch (e) { return null; }
+    }
+
+    function writeStorage(storage, key, value) {
+        try {
+            if (value === null) storage.removeItem(key);
+            else storage.setItem(key, JSON.stringify(value));
+        } catch (e) { /* storage unavailable */ }
+    }
+
+    // First screen: home if signed in or already chose guest this visit, otherwise sign in
+    function restoreCustomer() {
+        customer = readStorage(localStorage, CUSTOMER_SESSION_KEY);
+        renderAccountNav();
+        if (!customer) {
+            goToScreen(readStorage(sessionStorage, GUEST_CHOICE_KEY) ? 'start' : 'auth');
+            return;
+        }
+        goToScreen('start');
+        // Check the saved token still works (sessions last 14 days); a 401 signs out
+        apiRequest('GET', '/customer/me').then(function (account) {
+            customer.account = account;
+            writeStorage(localStorage, CUSTOMER_SESSION_KEY, customer);
+            renderAccountNav();
+        }).catch(function () { /* signed out already, or the API is down */ });
+    }
+
+    function bindAccount() {
+        el.authTabs.forEach(function (tab) {
+            tab.addEventListener('click', function () { setAuthTab(tab.getAttribute('data-auth-tab')); });
+        });
+        el.signInForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            submitAuth('login');
+        });
+        el.registerForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            submitAuth('register');
+        });
+        el.guestBtn.addEventListener('click', function () {
+            writeStorage(sessionStorage, GUEST_CHOICE_KEY, true);
+            track('guest_continue');
+            goToScreen('start');
+        });
+        el.authBackBtn.addEventListener('click', function () {
+            authReturnTo = null;
+            goToScreen('apply');
+        });
+        el.navSignInBtn.addEventListener('click', function () { showAuth('signin', null); });
+        el.navSignOutBtn.addEventListener('click', signOutCustomer);
+        el.saveLaterBtn.addEventListener('click', saveForLater);
+
+        el.savedAppsList.addEventListener('click', function (e) {
+            var resume = e.target.closest('button[data-resume]');
+            if (resume) resumeApplication(parseInt(resume.getAttribute('data-resume'), 10), resume.hasAttribute('data-guest'));
+            if (e.target.closest('button[data-dismiss-guest]')) {
+                writeStorage(localStorage, GUEST_APP_KEY, null);
+                renderSavedApplications();
+            }
+        });
+    }
+
+    function setAuthTab(tab) {
+        el.authTabs.forEach(function (t) {
+            var active = t.getAttribute('data-auth-tab') === tab;
+            t.classList.toggle('active', active);
+            t.setAttribute('aria-selected', String(active));
+        });
+        el.signInForm.classList.toggle('d-none', tab !== 'signin');
+        el.registerForm.classList.toggle('d-none', tab !== 'register');
+        el.authError.classList.add('d-none');
+    }
+
+    // returnTo 'apply': came from "Save & Finish Later", so go back to the form afterwards
+    function showAuth(tab, returnTo, message) {
+        authReturnTo = returnTo;
+        setAuthTab(tab);
+        el.authContext.textContent = returnTo
+            ? 'Sign in or create a free account to save application #' + app.applicationId + ' and finish it on any device.'
+            : '';
+        el.authContext.classList.toggle('d-none', !returnTo);
+        el.guestChoice.classList.toggle('d-none', !!returnTo);
+        el.authBackBtn.classList.toggle('d-none', !returnTo);
+        if (message) {
+            el.authError.textContent = message;
+            el.authError.classList.remove('d-none');
+        }
+        goToScreen('auth');
+    }
+
+    // The guest application to move into the account on sign-in: the open one, else this device's saved one
+    function currentGuestApplication() {
+        if (app.applicationId && app.guestKey) return { applicationId: app.applicationId, guestKey: app.guestKey };
+        return readStorage(localStorage, GUEST_APP_KEY);
+    }
+
+    function submitAuth(kind) {
+        var form = kind === 'login' ? el.signInForm : el.registerForm;
+        el.authError.classList.add('d-none');
+        form.classList.add('was-validated');
+        if (!form.checkValidity()) return;
+
+        var body = kind === 'login'
+            ? { email: el.signInEmail.value, password: el.signInPassword.value }
+            : { firstName: el.regFirst.value, lastName: el.regLast.value, email: el.regEmail.value, password: el.regPassword.value };
+        var guestApp = currentGuestApplication();
+        if (guestApp) body.claim = guestApp;
+
+        var btn = form.querySelector('button[type="submit"]');
+        var btnText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Please wait…';
+
+        apiRequest('POST', kind === 'login' ? '/customer/login' : '/customer/register', body).then(function (result) {
+            customer = { token: result.token, account: result.account };
+            writeStorage(localStorage, CUSTOMER_SESSION_KEY, customer);
+            var claimed = result.claimedApplicationId !== null && result.claimedApplicationId !== undefined;
+            if (claimed) {
+                writeStorage(localStorage, GUEST_APP_KEY, null);
+                if (app.applicationId === result.claimedApplicationId) app.guestKey = null;
+            }
+            form.reset();
+            form.classList.remove('was-validated');
+            track(kind === 'login' ? 'sign_in' : 'account_created');
+            renderAccountNav();
+            prefillApplicant();
+
+            if (authReturnTo === 'apply' && app.applicationId) {
+                authReturnTo = null;
+                goToScreen('apply');
+                setAutosaveStatus(app.guestKey
+                    ? 'Signed in, but this application is still saved on this device only.'
+                    : 'Saved to your account ✓');
+            } else {
+                goToScreen('start');
+            }
+        }).catch(function (err) {
+            el.authError.textContent = err.message;
+            el.authError.classList.remove('d-none');
+        }).then(function () {
+            btn.disabled = false;
+            btn.textContent = btnText;
+        });
+    }
+
+    function signOutCustomer() {
+        var token = customer && customer.token;
+        endCustomerSession();
+        if (token) {
+            // Tell the server too, so the token stops working right away
+            fetch(API_BASE_URL + '/customer/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } })
+                .catch(function () { /* already signed out here */ });
+        }
+    }
+
+    // Forget the token and close any open application (it belongs to the account)
+    function endCustomerSession(message) {
+        customer = null;
+        writeStorage(localStorage, CUSTOMER_SESSION_KEY, null);
+        writeStorage(sessionStorage, GUEST_CHOICE_KEY, null);
+        renderAccountNav();
+        resetPrototype();
+        showAuth('signin', null, message);
+    }
+
+    function renderAccountNav() {
+        el.accountLabel.textContent = customer ? 'Signed in as ' + customer.account.firstName : 'Browsing as a guest';
+        el.navSignInBtn.classList.toggle('d-none', !!customer);
+        el.navSignOutBtn.classList.toggle('d-none', !customer);
+    }
+
+    // Fills in the applicant's name and email from the account, without overwriting answers
+    function prefillApplicant() {
+        if (!customer) return;
+        [[el.firstName, customer.account.firstName], [el.lastName, customer.account.lastName], [el.email, customer.account.email]]
+            .forEach(function (pair) { if (!pair[0].value) pair[0].value = pair[1]; });
+    }
+
+    // ---------------------------------------------------------------
+    // SAVE & FINISH LATER, AUTOSAVE, AND RESUMING
+    // Each step is saved when the customer continues. Autosave also saves the step
+    // they're on as a draft while they type (PUT .../steps/{n}?draft=true), so
+    // nothing is lost if they close the tab.
+    // ---------------------------------------------------------------
+
+    var AUTOSAVE_DELAY_MS = 1500;
+    var autosaveTimer = null;
+
+    var MY_STATUS_TEXT = {
+        submitted: 'Submitted, waiting for review',
+        under_review: 'Being reviewed',
+        escalated: 'With a specialist',
+        approved: 'Approved',
+        rejected: 'Not approved',
+        abandoned: 'Closed'
+    };
+
+    function bindAutosave() {
+        ['input', 'change'].forEach(function (type) {
+            el.screenApply.addEventListener(type, function (event) {
+                if (!event.target.closest('.app-step') || event.target.type === 'file') return;
+                clearTimeout(autosaveTimer);
+                autosaveTimer = setTimeout(autosave, AUTOSAVE_DELAY_MS);
+            });
+        });
+    }
+
+    // Saves whatever is filled in on the current step, complete or not (steps 4-5 have nothing to save)
+    function saveDraft() {
+        if (!app.applicationId || app.step > 3) return Promise.resolve();
+        var form = currentStepForm();
+        return apiRequest('PUT', '/applications/' + app.applicationId + '/steps/' + app.step + '?draft=true',
+            { answers: collectAnswers(form), items: collectItems(form) });
+    }
+
+    function autosave() {
+        if (app.busy || !app.applicationId || app.step > 3) return;
+        var id = app.applicationId;
+        setAutosaveStatus('Saving…');
+        saveDraft().then(function () {
+            if (app.applicationId === id) setAutosaveStatus('Draft saved ' + timeNow());
+        }).catch(function () {
+            if (app.applicationId === id) setAutosaveStatus('Couldn\'t save a draft. Your answers are saved when you continue.');
+        });
+    }
+
+    function setAutosaveStatus(text) {
+        el.autosaveStatus.textContent = text;
+    }
+
+    function saveForLater() {
+        if (app.busy || !app.applicationId) return;
+        clearTimeout(autosaveTimer);
+        hideAppError();
+        setAppBusy(true);
+        saveDraft().then(function () {
+            if (app.step === 1 && el.currentPolicyFile.checkValidity()) return syncCurrentPolicyFile();
+        }).then(function () {
+            track('save_for_later', { page: 'apply', stepNumber: app.step });
+            setAutosaveStatus('Saved ' + timeNow());
+            showSaveLaterModal();
+        }).catch(showAppError).then(function () { setAppBusy(false); });
+    }
+
+    function showSaveLaterModal() {
+        el.saveLaterBody.innerHTML = '';
+        el.saveLaterFooter.innerHTML = '';
+        if (customer) {
+            el.saveLaterBody.appendChild(makeEl('p', '', 'Application #' + app.applicationId +
+                ' is saved to your account (' + customer.account.email + ').'));
+            el.saveLaterBody.appendChild(makeEl('p', 'text-muted mb-0',
+                'Next time, sign in and choose Continue on the home page. You\'ll pick up right on this step.'));
+            el.saveLaterFooter.appendChild(modalButton('Go to Home', 'valent-btn-outline', resetPrototype));
+            el.saveLaterFooter.appendChild(modalButton('Keep Going', 'valent-btn-primary', null));
+        } else {
+            el.saveLaterBody.appendChild(makeEl('p', '', 'Application #' + app.applicationId +
+                ' is saved on this device. Come back in this browser and choose Continue on the home page.'));
+            el.saveLaterBody.appendChild(makeEl('p', 'text-muted mb-0',
+                'To finish on a different device, or so it isn\'t lost if you clear your browser, create a free account.'));
+            el.saveLaterFooter.appendChild(modalButton('Not Now', 'valent-btn-outline', null));
+            el.saveLaterFooter.appendChild(modalButton('Sign In', 'valent-btn-outline', function () { showAuth('signin', 'apply'); }));
+            el.saveLaterFooter.appendChild(modalButton('Create a Free Account', 'valent-btn-primary', function () { showAuth('register', 'apply'); }));
+        }
+        bootstrap.Modal.getOrCreateInstance(el.saveLaterModalEl).show();
+    }
+
+    function modalButton(text, className, onClick) {
+        var btn = makeEl('button', 'btn ' + className, text);
+        btn.type = 'button';
+        btn.setAttribute('data-bs-dismiss', 'modal');
+        if (onClick) btn.addEventListener('click', onClick);
+        return btn;
+    }
+
+    // Home page list: the account's applications, or this device's guest application
+    function renderSavedApplications() {
+        el.savedAppsList.innerHTML = '';
+        el.savedAppsError.classList.add('d-none');
+        el.savedAppsPanel.classList.add('d-none');
+
+        if (customer) {
+            apiRequest('GET', '/customer/applications').then(function (apps) {
+                // Skip applications opened but never typed in (created = last updated)
+                var shown = apps.filter(function (a) {
+                    return a.status !== 'in_progress' || new Date(a.updatedAt) - new Date(a.createdAt) > 1000;
+                }).slice(0, 5);
+                showSavedApplications('Your applications', shown, false);
+            }).catch(function () { /* the list is a convenience; the rest of the page still works */ });
+            return;
+        }
+
+        var guestApp = readStorage(localStorage, GUEST_APP_KEY);
+        if (!guestApp) return;
+        apiRequest('GET', '/applications/' + guestApp.applicationId + '/resume', null, { 'X-Guest-Key': guestApp.guestKey })
+            .then(function (data) {
+                if (data.status !== 'in_progress') {
+                    writeStorage(localStorage, GUEST_APP_KEY, null);
+                    return;
+                }
+                if (!hasSavedAnswers(data)) return;
+                showSavedApplications('Pick up where you left off', [data], true);
+            }).catch(function (err) {
+                if (err.status === 403 || err.status === 404) writeStorage(localStorage, GUEST_APP_KEY, null);
+            });
+    }
+
+    function hasSavedAnswers(data) {
+        return Object.keys(data.answers).some(function (key) { return data.answers[key]; }) ||
+            Object.keys(data.items).length > 0;
+    }
+
+    // Built with textContent (makeEl), so nothing from the server is treated as HTML
+    function showSavedApplications(title, apps, isGuest) {
+        if (apps.length === 0) return;
+        el.savedAppsTitle.textContent = title;
+        apps.forEach(function (a) {
+            var row = makeEl('div', 'list-group-item d-flex flex-wrap align-items-center justify-content-between gap-2 px-0');
+            var info = makeEl('div');
+            info.appendChild(makeEl('div', 'fw-semibold', 'Application #' + a.applicationId + ' · ' +
+                typesLabel(typesFromCodes(a.lineCodes)) + ' · ' + stateName(a.stateCode)));
+            var status = a.status === 'in_progress'
+                ? 'In progress, step ' + a.currentStep + ' of ' + APP_TOTAL_STEPS
+                : MY_STATUS_TEXT[a.status] || a.status;
+            info.appendChild(makeEl('div', 'small text-muted', status + ' · saved ' + timeAgo(a.updatedAt)));
+            row.appendChild(info);
+
+            if (a.status === 'in_progress') {
+                var actions = makeEl('div', 'd-flex align-items-center gap-2');
+                if (isGuest) {
+                    var dismiss = makeEl('button', 'btn btn-sm btn-link text-muted', 'Start fresh instead');
+                    dismiss.type = 'button';
+                    dismiss.setAttribute('data-dismiss-guest', '');
+                    actions.appendChild(dismiss);
+                }
+                var resume = makeEl('button', 'btn btn-sm valent-btn-primary', 'Continue →');
+                resume.type = 'button';
+                resume.setAttribute('data-resume', a.applicationId);
+                if (isGuest) resume.setAttribute('data-guest', '');
+                actions.appendChild(resume);
+                row.appendChild(actions);
+            }
+            el.savedAppsList.appendChild(row);
+        });
+        el.savedAppsPanel.classList.remove('d-none');
+    }
+
+    function resumeApplication(id, isGuest) {
+        var guestApp = isGuest ? readStorage(localStorage, GUEST_APP_KEY) : null;
+        var headers = guestApp ? { 'X-Guest-Key': guestApp.guestKey } : null;
+        el.savedAppsError.classList.add('d-none');
+        apiRequest('GET', '/applications/' + id + '/resume', null, headers).then(function (data) {
+            if (data.status !== 'in_progress') {
+                renderSavedApplications();
+                return;
+            }
+            fillApplication(data, guestApp ? guestApp.guestKey : null);
+            track('resume_application', { page: 'apply', stepNumber: app.step });
+        }).catch(function (err) {
+            el.savedAppsError.textContent = err.message;
+            el.savedAppsError.classList.remove('d-none');
+        });
+    }
+
+    // Opens the form with everything saved so far, on the step the customer stopped at
+    function fillApplication(data, guestKey) {
+        state.path = 'apply';
+        state.selectedTypes = typesFromCodes(data.lineCodes);
+        state.selectedState = data.stateCode;
+        state.stateChosen = true;
+        el.stateSelect.value = data.stateCode;
+        updateInsuranceCardSelection();
+        updateExploreButtonState();
+
+        app.applicationId = data.applicationId;
+        app.guestKey = guestKey;
+        app.lines = state.selectedTypes.slice();
+        app.stateCode = data.stateCode;
+        app.step = data.currentStep;
+        resetApplicationForms();
+        app.uploadedPolicyName = data.currentPolicyFileName;
+
+        // Lines first, so the right questions are enabled before they're filled
+        setupApplicationForm();
+        fillAnswers(data.answers);
+        fillItems(data.items);
+        updateCurrentPolicyFields();
+        showUploadedPolicy();
+        updateMailingFields();
+        if (data.answers.mailing_state) el.mailingState.value = data.answers.mailing_state;
+        setAddressVerified(data.answers.address_verified === 'google');
+        updateUnitRequirement();
+        updateYearLimits();
+        prefillApplicant();
+        setAutosaveStatus('Saved ' + timeAgo(data.updatedAt));
+
+        showAppStep(app.step);
+        goToScreen('apply');
+    }
+
+    function fillAnswers(answers) {
+        Object.keys(answers).forEach(function (name) {
+            var value = answers[name];
+            if (value === null) return;
+            el.screenApply.querySelectorAll('[name="' + name + '"]').forEach(function (input) {
+                if (input.type === 'radio') input.checked = input.value === value;
+                else if (input.type === 'checkbox') input.checked = value.split(',').indexOf(input.value) !== -1;
+                else if (input.type !== 'file') input.value = value;
+            });
+        });
+    }
+
+    // Vehicles before drivers, so each driver's "vehicle they drive most" list exists
+    function fillItems(items) {
+        ['vehicle', 'jewelry', 'driver'].forEach(function (type) {
+            var saved = items[type];
+            if (!saved || saved.length === 0) return;
+            var list = itemList(type);
+            list.innerHTML = '';
+            saved.forEach(function (item) {
+                addItem(type, true);
+                var card = list.lastElementChild;
+                Object.keys(item).forEach(function (key) {
+                    var field = card.querySelector('[data-field="' + key + '"]');
+                    if (!field || item[key] === null) return;
+                    if (key === 'primary_vehicle') {
+                        // Saved as the vehicle's number; the dropdown uses card ids
+                        var vehicle = itemList('vehicle').querySelectorAll('.repeat-item')[parseInt(item[key], 10) - 1];
+                        field.value = vehicle ? vehicle.getAttribute('data-uid') : '';
+                    } else {
+                        field.value = item[key];
+                    }
+                    if (key === 'garaging_zip') field.dataset.prefilled = '';
+                });
+                var ownership = card.querySelector('[data-field="ownership"]');
+                if (ownership) {
+                    card.querySelector('.lender-note').classList.toggle('d-none',
+                        ownership.value !== 'financed' && ownership.value !== 'leased');
+                }
+            });
+            refreshItemList(type);
+        });
+    }
+
+    // ---------------------------------------------------------------
+    // ADDRESS LOOKUP (Google Places API, New)
+    // The key comes from the API (GET /api/config, stored in .NET user secrets) so it's
+    // never committed. Without a key, or if Google can't load, customers just type the
+    // address. Picking a suggestion fills street, unit, city, county, and ZIP, and the
+    // address must be in the application's state.
+    // ---------------------------------------------------------------
+
+    var places = {
+        lib: null,           // google.maps.places once loaded
+        sessionToken: null,  // groups keystrokes + the final pick into one billed session
+        timer: null,
+        suggestions: [],
+        active: -1,
+        wrongState: null     // state name when the picked address isn't in the application's state
+    };
+    var PO_BOX_PATTERN = /\b(p\.?\s*o\.?\s*box|post\s+office\s+box|apo|fpo|dpo)\b/i;
+
+    function loadAddressLookup() {
+        setAddressLookupStatus('loading');
+        apiRequest('GET', '/config').then(function (config) {
+            if (!config.googleMapsApiKey) {
+                setAddressLookupStatus('off');
+                return;
+            }
+            window.valentMapsReady = function () {
+                google.maps.importLibrary('places').then(function (lib) {
+                    places.lib = lib;
+                    setAddressLookupStatus('ready');
+                }).catch(function () { setAddressLookupStatus('unavailable'); });
+            };
+            window.gm_authFailure = function () { // Google calls this for a bad or restricted key
+                places.lib = null;
+                setAddressLookupStatus('unavailable');
+            };
+            var script = document.createElement('script');
+            script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(config.googleMapsApiKey) +
+                '&v=weekly&loading=async&callback=valentMapsReady';
+            script.async = true;
+            script.onerror = function () { setAddressLookupStatus('unavailable'); };
+            document.head.appendChild(script);
+        }).catch(function () { setAddressLookupStatus('unavailable'); });
+    }
+
+    function setAddressLookupStatus(mode) {
+        el.addressLookupStatus.textContent = {
+            loading: '',
+            ready: 'Start typing, then choose your address from the list.',
+            off: 'Address lookup is off in this demo (no Google Maps key is set up). Type the address instead.',
+            unavailable: 'Address lookup isn\'t available right now. Type the address instead.'
+        }[mode];
+    }
+
+    function bindAddressLookup() {
+        el.street.addEventListener('input', function () {
+            setAddressVerified(false);
+            places.wrongState = null;
+            checkPropertyStreet();
+            if (!places.lib) return;
+            clearTimeout(places.timer);
+            var text = el.street.value.trim();
+            if (text.length < 3) {
+                hideSuggestions();
+                return;
+            }
+            places.timer = setTimeout(function () { fetchSuggestions(text); }, 250);
+        });
+
+        el.street.addEventListener('keydown', function (e) {
+            if (el.addressSuggestions.classList.contains('d-none')) return;
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                var count = places.suggestions.length;
+                places.active = (places.active + (e.key === 'ArrowDown' ? 1 : -1) + count) % count;
+                highlightSuggestion();
+            } else if (e.key === 'Enter' && places.active !== -1) {
+                e.preventDefault();
+                chooseSuggestion(places.suggestions[places.active]);
+            } else if (e.key === 'Escape') {
+                hideSuggestions();
+            }
+        });
+        el.street.addEventListener('blur', function () { setTimeout(hideSuggestions, 150); });
+
+        // mousedown, not click, so it happens before the street field's blur hides the list
+        el.addressSuggestions.addEventListener('mousedown', function (e) {
+            var item = e.target.closest('[data-index]');
+            if (!item) return;
+            e.preventDefault();
+            chooseSuggestion(places.suggestions[parseInt(item.getAttribute('data-index'), 10)]);
+        });
+
+        el.homeType.addEventListener('change', updateUnitRequirement);
+        el.yearBuilt.addEventListener('input', updateYearLimits);
+    }
+
+    function fetchSuggestions(text) {
+        if (!places.sessionToken) places.sessionToken = new places.lib.AutocompleteSessionToken();
+        places.lib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+            input: text,
+            sessionToken: places.sessionToken,
+            includedRegionCodes: ['us'],
+            includedPrimaryTypes: ['street_address', 'premise', 'subpremise']
+        }).then(function (result) {
+            if (el.street.value.trim() !== text) return; // the customer kept typing
+            places.suggestions = result.suggestions.filter(function (sug) { return sug.placePrediction; }).slice(0, 5);
+            renderSuggestions();
+        }).catch(hideSuggestions);
+    }
+
+    function renderSuggestions() {
+        el.addressSuggestions.innerHTML = '';
+        places.active = -1;
+        if (places.suggestions.length === 0) {
+            hideSuggestions();
+            return;
+        }
+        places.suggestions.forEach(function (sug, i) {
+            var item = makeEl('li', 'list-group-item list-group-item-action', sug.placePrediction.text.toString());
+            item.id = 'addressSuggestion' + i;
+            item.setAttribute('role', 'option');
+            item.setAttribute('data-index', i);
+            el.addressSuggestions.appendChild(item);
+        });
+        el.addressSuggestions.appendChild(makeEl('li', 'list-group-item small text-muted text-end address-attribution', 'Powered by Google'));
+        el.addressSuggestions.classList.remove('d-none');
+        el.street.setAttribute('aria-expanded', 'true');
+    }
+
+    function highlightSuggestion() {
+        el.addressSuggestions.querySelectorAll('[data-index]').forEach(function (item, i) {
+            item.classList.toggle('active', i === places.active);
+        });
+        el.street.setAttribute('aria-activedescendant', places.active === -1 ? '' : 'addressSuggestion' + places.active);
+    }
+
+    function hideSuggestions() {
+        el.addressSuggestions.classList.add('d-none');
+        el.street.setAttribute('aria-expanded', 'false');
+        el.street.removeAttribute('aria-activedescendant');
+    }
+
+    function chooseSuggestion(suggestion) {
+        hideSuggestions();
+        var place = suggestion.placePrediction.toPlace();
+        place.fetchFields({ fields: ['addressComponents'] }).then(function () {
+            places.sessionToken = null; // fetchFields ends the billing session
+            applyAddress(place.addressComponents || []);
+        }).catch(function () { setAddressLookupStatus('unavailable'); });
+    }
+
+    // Fills the address fields from Google's address components
+    function applyAddress(components) {
+        function part(type, short) {
+            var c = components.filter(function (comp) { return comp.types.indexOf(type) !== -1; })[0];
+            return c ? (short ? c.shortText : c.longText) : '';
+        }
+        el.street.value = (part('street_number') + ' ' + part('route', true)).trim();
+        if (part('subpremise')) el.unit.value = part('subpremise');
+        // NYC addresses have a borough (sublocality) instead of a city
+        el.city.value = part('locality') || part('sublocality_level_1') || part('postal_town') || part('administrative_area_level_3');
+        el.county.value = part('administrative_area_level_2');
+        el.zip.value = part('postal_code');
+        setAddressVerified(true);
+
+        var stateCode = part('administrative_area_level_1', true);
+        places.wrongState = stateCode && stateCode !== app.stateCode ? part('administrative_area_level_1') : null;
+        checkPropertyStreet();
+        track('address_selected', { page: 'apply', stepNumber: 2, metadata: { source: 'google' } });
+        // Same as typing a ZIP: updates vehicles' garaging ZIPs and starts an autosave
+        el.zip.dispatchEvent(new Event('input', { bubbles: true }));
+        el.unit.focus();
+    }
+
+    function setAddressVerified(verified) {
+        el.addressVerified.value = verified ? 'google' : 'manual';
+        el.street.classList.toggle('address-verified', verified);
+    }
+
+    // The property has to be a physical street address in the application's state
+    function checkPropertyStreet() {
+        var problem = '';
+        if (PO_BOX_PATTERN.test(el.street.value)) {
+            problem = 'The property must be a street address. If you get mail at a P.O. Box or military address, add it on the Applicant step.';
+        } else if (places.wrongState) {
+            problem = 'This address is in ' + places.wrongState + ', but your application is for ' + stateName(app.stateCode) +
+                '. Choose an address in ' + stateName(app.stateCode) + ', or go back and change your state.';
+        }
+        el.street.setCustomValidity(problem);
+        el.streetError.textContent = problem || 'Enter the property\'s street address.';
+    }
+
+    // Condos always have a unit number; it's optional for everything else
+    function updateUnitRequirement() {
+        var type = el.homeType.value;
+        el.unit.required = type === 'condo';
+        el.unitOptional.classList.toggle('d-none', el.unit.required);
+        el.unitHint.textContent = type === 'condo' ? 'Required for condos.'
+            : type === 'duplex' ? 'Which unit is yours?'
+            : 'For condos, duplexes, and apartments.';
+    }
+
+    // The roof and the last update can't be older than the house
+    function updateYearLimits() {
+        var built = parseInt(el.yearBuilt.value, 10);
+        el.yearsSinceBuilt.forEach(function (input) {
+            input.min = built >= 1800 ? built : 1800;
+        });
+    }
+
+    // ---------------------------------------------------------------
+    // MAILING ADDRESS (applicant step): P.O. Box or military (APO / FPO / DPO)
+    // Military addresses use the post office name as the city and AA / AE / AP as the state.
+    // ---------------------------------------------------------------
+
+    var ALL_STATE_CODES = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN',
+        'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY',
+        'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'];
+    var MILITARY_STATES = [
+        ['AA', 'AA (the Americas)'], ['AE', 'AE (Europe, Middle East, Africa, Canada)'], ['AP', 'AP (Pacific)']
+    ];
+
+    function bindMailingAddress() {
+        el.mailingPoMilitary.addEventListener('change', updateMailingFields);
+        el.mailingType.addEventListener('change', updateMailingFields);
+    }
+
+    function updateMailingFields() {
+        var show = el.mailingPoMilitary.checked;
+        el.mailingFields.disabled = !show;
+        el.mailingFields.classList.toggle('d-none', !show);
+
+        var type = el.mailingType.value;
+        var military = type === 'APO' || type === 'FPO' || type === 'DPO';
+        el.mailingLine1Label.textContent = military ? 'Unit, PSC, or ship and box number' : 'Box number';
+        el.mailingLine1.placeholder = military ? 'e.g. PSC 1234, Box 5678' : 'e.g. PO Box 1234';
+        el.mailingLine1Error.textContent = military ? 'Include the unit or PSC and box number.' : 'Include the box number.';
+        if (military) {
+            el.mailingCity.value = type;
+        } else if (['APO', 'FPO', 'DPO'].indexOf(el.mailingCity.value) !== -1) {
+            el.mailingCity.value = '';
+        }
+        el.mailingCity.readOnly = military;
+        populateMailingStates(military);
+    }
+
+    // Keeps the current choice when it's still valid for the address type
+    function populateMailingStates(military) {
+        var current = el.mailingState.value;
+        el.mailingState.innerHTML = '<option value="">Choose...</option>';
+        (military ? MILITARY_STATES : ALL_STATE_CODES.map(function (code) { return [code, code]; })).forEach(function (pair) {
+            el.mailingState.appendChild(new Option(pair[1], pair[0]));
+        });
+        el.mailingState.value = current;
+        if (el.mailingState.value !== current) el.mailingState.value = '';
+    }
+
+    // ---------------------------------------------------------------
+    // BEHAVIOR TRACKING (POST /api/events -> analytics_events, for the agent dashboard)
+    // One session per page load, from opening the site to leaving or closing it.
+    // Sends event names, pages, steps, timings, and field NAMES only, never answers.
+    //   page_view       each screen shown
+    //   step_enter / step_complete (with time on the step) / step_back
+    //   validation_error  the first field that stopped "Continue"
+    //   page_exit       closing / leaving: time on the current page or step, plus the whole visit
+    // ---------------------------------------------------------------
+
+    var SCREEN_PAGES = { auth: 'sign_in', start: 'landing', select: 'select', explorer: 'explorer', compare: 'compare', apply: 'apply' };
+    var EVENT_FLUSH_MS = 5000;
+
+    var tracking = {
+        sessionId: null,
+        queue: [],
+        visitStart: Date.now(),
+        page: null,
+        pageStart: Date.now(),
+        stepStart: Date.now(),
+        exited: false
+    };
+
+    function initTracking() {
+        tracking.sessionId = newUuid();
+        track('session_start', { page: 'site' });
+        setInterval(function () { flushEvents(false); }, EVENT_FLUSH_MS);
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'hidden') flushEvents(true);
+        });
+        window.addEventListener('pagehide', trackExit);
+        window.addEventListener('pageshow', function (e) {
+            if (e.persisted) tracking.exited = false; // back from the browser's page cache
+        });
+    }
+
+    function track(name, extra) {
+        extra = extra || {};
+        tracking.queue.push({
+            name: name,
+            page: extra.page || tracking.page,
+            stepNumber: extra.stepNumber || null,
+            applicationId: tracking.page === 'apply' || extra.page === 'apply' ? app.applicationId : null,
+            durationMs: extra.durationMs === undefined ? null : Math.round(extra.durationMs),
+            metadata: extra.metadata || null
+        });
+        if (tracking.queue.length >= 20) flushEvents(false);
+    }
+
+    function trackScreen(name) {
+        var page = SCREEN_PAGES[name];
+        if (page === tracking.page) return;
+        tracking.page = page;
+        tracking.pageStart = Date.now();
+        track('page_view');
+    }
+
+    // Starts the clock for the step on screen (step_enter needs the application number)
+    function markStepEntered() {
+        tracking.stepStart = Date.now();
+        if (app.applicationId) track('step_enter', { page: 'apply', stepNumber: app.step });
+    }
+
+    // step_complete / step_back for the step on screen, with the time spent on it
+    function trackStep(name) {
+        track(name, { page: 'apply', stepNumber: app.step, durationMs: Date.now() - tracking.stepStart });
+    }
+
+    function trackValidationError(form) {
+        var field = form.querySelector('input:invalid, select:invalid, textarea:invalid');
+        if (!field) return;
+        track('validation_error', {
+            page: 'apply',
+            stepNumber: app.step,
+            metadata: { field: field.name || field.getAttribute('data-field') || field.id }
+        });
+        field.focus();
+    }
+
+    function trackExit() {
+        if (tracking.exited) return;
+        tracking.exited = true;
+        var now = Date.now();
+        var onStep = tracking.page === 'apply' && el.appDone.classList.contains('d-none');
+        track('page_exit', {
+            page: tracking.page === 'apply' && !onStep ? 'confirmation' : tracking.page,
+            stepNumber: onStep ? app.step : null,
+            durationMs: onStep ? now - tracking.stepStart : now - tracking.pageStart,
+            metadata: { visit_ms: String(now - tracking.visitStart) }
+        });
+        flushEvents(true);
+    }
+
+    // beacon: the page is closing, so use sendBeacon (fetch may be cancelled). Sent as
+    // text/plain so the browser doesn't need a CORS preflight; the API parses it as JSON.
+    function flushEvents(beacon) {
+        if (tracking.queue.length === 0) return;
+        var body = JSON.stringify({
+            sessionId: tracking.sessionId,
+            stateCode: app.stateCode || (state.stateChosen ? state.selectedState : null),
+            deviceType: deviceType(),
+            events: tracking.queue.splice(0, 50)
+        });
+        var url = API_BASE_URL + '/events';
+        if (beacon && navigator.sendBeacon && navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }))) return;
+        fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: body, keepalive: true })
+            .catch(function () { /* tracking never interrupts the customer */ });
+    }
+
+    function deviceType() {
+        var touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        if (!touch) return 'desktop';
+        return window.innerWidth < 768 ? 'mobile' : 'tablet';
+    }
+
+    function newUuid() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+            var r = crypto.getRandomValues(new Uint8Array(1))[0] % 16;
+            return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
         });
     }
 
@@ -1631,6 +2620,7 @@
         ]
     };
     var SCREENS = {
+        auth: 'screenAuth',
         start: 'screenStart',
         select: 'screenSelect',
         explorer: 'screenExplorer',
@@ -1647,6 +2637,8 @@
         el.stepIndicatorWrap.classList.toggle('d-none', activeIndex === -1 || name === 'apply');
         if (activeIndex !== -1) renderStepIndicator(steps, activeIndex + 1);
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        trackScreen(name);
+        if (name === 'start') renderSavedApplications();
     }
 
     function renderStepIndicator(steps, activeStep) {
@@ -1694,11 +2686,14 @@
     }
 
     function resetPrototype() {
+        clearTimeout(autosaveTimer);
         app.applicationId = null;
+        app.guestKey = null;
         app.lines = [];
         state.path = null;
         state.selectedTypes = [];
         state.selectedState = DEFAULT_STATE;
+        state.stateChosen = false;
         state.selectedCoverages = [];
         state.modalCoverageCode = null;
         el.stateSelect.value = DEFAULT_STATE;
@@ -1723,6 +2718,25 @@
 
     function hasLine(type) {
         return app.lines.indexOf(type) !== -1;
+    }
+
+    // ['HOME', 'AUTO'] -> ['homeowners', 'auto']
+    function typesFromCodes(codes) {
+        return TYPE_ORDER.filter(function (type) { return codes.indexOf(LINE_CODES[type]) !== -1; });
+    }
+
+    function timeAgo(value) {
+        var minutes = Math.round((Date.now() - new Date(value).getTime()) / 60000);
+        if (!(minutes >= 1)) return 'just now';
+        if (minutes < 60) return minutes + ' min ago';
+        var hours = Math.round(minutes / 60);
+        if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
+        var days = Math.round(hours / 24);
+        return days + (days === 1 ? ' day ago' : ' days ago');
+    }
+
+    function timeNow() {
+        return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     }
 
     function stateName(abbr) {

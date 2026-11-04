@@ -311,3 +311,21 @@ body {
     letter-spacing: 0.03em;
     vertical-align: middle;
 }
+
+/* ---------------- Sprint 2: review flags, rules, status guide ---------------- */
+.status-pill.status-info {
+    color: #1c4f8a;
+    background-color: #e0ecfa;
+}
+.verify-badge {
+    background-color: #fff3cd;
+    color: #664d03;
+    border: 1px solid #ffe69c;
+    font-weight: 600;
+}
+.flag-list li + li {
+    margin-top: 0.35rem;
+}
+.status-guide td:first-child {
+    white-space: nowrap;
+}

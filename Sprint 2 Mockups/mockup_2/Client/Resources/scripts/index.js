@@ -1,6 +1,7 @@
 /* Valent Partners - Mockup 2: Agent Dashboard
    Loads everything from the C# API (which reads the valent_insurance MySQL database):
-     GET /api/dashboard           KPIs, funnel, and friction metrics for the current filters
+     GET /api/dashboard           KPIs, funnel, friction, and visit-time metrics for the current filters
+     GET /api/dashboard/rules     preliminary eligibility rules (for the client to review)
      GET /api/applications        the review queue
      GET /api/applications/{id}   one application's answers and history
      PUT /api/applications/{id}/status   start review / approve / reject / escalate
@@ -68,11 +69,44 @@
         square_feet: 'Square feet',
         flood_zone: 'Flood zone',
         has_basement: 'Basement',
-        recent_incidents: 'Recent accidents, claims, or violations'
+        recent_incidents: 'Recent accidents, claims, or violations',
+        // Sprint 2: address lookup, more property questions, mailing address
+        unit: 'Unit / apt',
+        county: 'County',
+        address_verified: 'Address',
+        stories: 'Stories',
+        roof_year: 'Roof installed / replaced',
+        last_updated_year: 'Last major update (electrical, plumbing, HVAC)',
+        occupancy: 'How the home is used',
+        construction_type: 'Exterior walls',
+        roof_material: 'Roof material',
+        roof_certification: 'Storm-resistant roof',
+        foundation_type: 'Foundation',
+        prior_claims: 'Home claims, last 5 years',
+        has_pool: 'Pool',
+        has_trampoline: 'Trampoline',
+        has_dog: 'Dog',
+        protective_devices: 'Safety features',
+        mailing_po_military: 'P.O. Box / military mailing address',
+        mailing_type: 'Mailing address type',
+        mailing_line1: 'Mailing box / unit',
+        mailing_city: 'Mailing city',
+        mailing_state: 'Mailing state',
+        mailing_zip: 'Mailing ZIP'
     };
 
     var VALUE_LABELS = {
-        home_type: { single_family: 'Single-family house', townhouse: 'Townhouse', condo: 'Condo', mobile: 'Mobile / manufactured' },
+        home_type: { single_family: 'Single-family house', townhouse: 'Townhouse', condo: 'Condo', duplex: 'Duplex / 2–4 units', mobile: 'Mobile / manufactured' },
+        address_verified: { google: 'Verified with Google address lookup', manual: 'Typed in (not verified)' },
+        stories: { '4+': '4 or more' },
+        occupancy: { primary: 'Main home', secondary: 'Second / vacation home', rental: 'Rented out', vacant: 'Vacant' },
+        construction_type: { frame: 'Wood frame / siding', masonry: 'Brick, block, or stone', masonry_veneer: 'Brick or stone veneer', stucco: 'Stucco', other: 'Other / not sure' },
+        roof_material: { asphalt: 'Asphalt shingle', metal: 'Metal', tile: 'Clay or concrete tile', slate: 'Slate', wood: 'Wood shake', flat: 'Flat / built-up', other: 'Other / not sure' },
+        roof_certification: { fortified: 'FORTIFIED certificate', class4: 'Class 4 impact-resistant', none: 'No', unknown: 'Not sure' },
+        foundation_type: { slab: 'Slab', crawlspace: 'Crawl space', basement: 'Basement', piers: 'Piers / pilings', other: 'Other / not sure' },
+        prior_claims: { '0': 'None', '3plus': '3 or more' },
+        protective_devices: { monitored_smoke: 'Monitored smoke alarm', burglar_alarm: 'Burglar alarm', sprinklers: 'Sprinklers', deadbolts: 'Deadbolts' },
+        mailing_type: { po_box: 'P.O. Box', APO: 'APO', FPO: 'FPO', DPO: 'DPO' },
         flood_zone: { unknown: 'Not known', A: 'Zone A / AE (high risk)', V: 'Zone V / VE (coastal high risk)', X: 'Zone X (moderate/low risk)' },
         use: { commute: 'Commuting', pleasure: 'Personal / errands', business: 'Business', rideshare: 'Rideshare / delivery' },
         ownership: { owned: 'Owned outright', financed: 'Financed', leased: 'Leased' },
@@ -84,12 +118,26 @@
     // STATE
     // ---------------------------------------------------------------
 
+    // Where a visitor was when they left (page names sent by mockup 1's tracking)
+    var EXIT_PAGE_LABELS = {
+        site: 'Arrived', sign_in: 'Sign in / guest', landing: 'Home page', select: 'Type & State',
+        explorer: 'Coverage Explorer', compare: 'Compare', confirmation: 'After submitting'
+    };
+
+    // Review flag severities (from StateRules in the API), most serious first
+    var FLAG_META = {
+        refer: { label: 'Specialist', cls: 'status-critical' },
+        review: { label: 'Check', cls: 'status-warning' },
+        info: { label: 'Note', cls: 'status-info' }
+    };
+
     var DEFAULT_FILTERS = { state: '', line: '', range: 'all' };
     var filters = Object.assign({}, DEFAULT_FILTERS);
     var dashboard = null;       // last GET /api/dashboard response
     var applications = [];      // last GET /api/applications response
     var openAppId = null;       // application shown in the detail modal
     var openApp = null;
+    var rules = null;           // GET /api/dashboard/rules, loaded once
     var requestCounter = 0;     // ignores slow responses from older filter changes
     var el = {};
 
@@ -128,7 +176,10 @@
         el.kpiRow = document.getElementById('kpiRow');
         el.funnelContainer = document.getElementById('funnelContainer');
         el.frictionTableBody = document.getElementById('frictionTableBody');
-        el.quickExitSeconds = document.getElementById('quickExitSeconds');
+        el.quickExitSteps = document.getElementById('quickExitSteps');
+        el.visitKpiRow = document.getElementById('visitKpiRow');
+        el.exitPagesBody = document.getElementById('exitPagesBody');
+        el.rulesTableBody = document.getElementById('rulesTableBody');
         el.pricingIntro = document.getElementById('pricingIntro');
         el.pricingTableBody = document.getElementById('pricingTableBody');
         el.pricingFootnote = document.getElementById('pricingFootnote');
@@ -350,11 +401,13 @@
 
         Promise.all([
             apiRequest('GET', '/dashboard' + query),
-            apiRequest('GET', '/applications')
+            apiRequest('GET', '/applications'),
+            rules ? Promise.resolve(rules) : apiRequest('GET', '/dashboard/rules')
         ]).then(function (results) {
             if (token !== requestCounter) return;
             dashboard = results[0];
             applications = results[1];
+            rules = results[2];
             el.apiError.classList.add('d-none');
             renderAll();
         }).catch(function (err) {
@@ -376,7 +429,9 @@
         renderPricing();
         renderAgentUsage();
         renderQueue();
-        el.quickExitSeconds.textContent = dashboard.quickExitSeconds;
+        renderVisits();
+        renderRules();
+        el.quickExitSteps.textContent = dashboard.quickExitSteps.join(', ');
     }
 
     function renderFilterSummary() {
@@ -394,6 +449,7 @@
             { label: 'Completion Rate', value: completion === null ? '—' : completion + '%', caption: d.submitted + ' submitted' },
             { label: 'Not Submitted', value: completion === null ? '—' : (100 - completion) + '%', caption: 'Abandoned or still in progress' },
             { label: 'Awaiting Review', value: d.awaitingReview, caption: 'New, under review, or escalated' },
+            { label: 'Quick Exits', value: d.started > 0 ? percent(d.quickExits, d.started) + '%' : '—', caption: d.quickExits + ' left on step ' + d.quickExitSteps.join(' or ') },
             { label: 'Avg. Time to Submit', value: d.avgMinutesToSubmit === null ? '—' : formatMinutes(d.avgMinutesToSubmit), caption: 'Start of application to submit' }
         ];
 
@@ -545,10 +601,12 @@
         var row = dashboard.friction.filter(function (f) { return f.stepNumber === stepNumber; })[0];
         if (!row || row.visits === 0) return null;
 
+        var isQuickExitStep = dashboard.quickExitSteps.indexOf(stepNumber) !== -1;
         var exitPct = percent(row.exits, row.visits);
-        var quickExitPct = percent(row.quickExits, row.visits);
+        var quickExitPct = isQuickExitStep ? percent(row.quickExits, row.visits) : null;
         var errorPct = percent(row.errorSessions, row.visits);
-        var score = exitPct + quickExitPct * 1.5 + errorPct * 1.2;   // placeholder formula, see "Placeholder Thresholds"
+        // Placeholder formula, see "Placeholder Thresholds". Exits count extra on quick-exit steps.
+        var score = exitPct * (isQuickExitStep ? 1.5 : 1) + errorPct * 1.2;
 
         return {
             visits: row.visits,
@@ -585,7 +643,7 @@
                     '<td>' + (f ? f.visits : 0) + '</td>' +
                     '<td>' + (f && f.dwellSec !== null ? formatDuration(f.dwellSec) : '—') + '</td>' +
                     '<td>' + (f ? f.exitPct + '%' : '—') + '</td>' +
-                    '<td>' + (f ? f.quickExitPct + '%' : '—') + '</td>' +
+                    '<td>' + (f && f.quickExitPct !== null ? f.quickExitPct + '%' : '<span class="text-muted" title="Not a quick-exit step">—</span>') + '</td>' +
                     '<td>' + drop.count + (drop.pct === null ? '' : ' (' + drop.pct + '%)') + '</td>' +
                     '<td>' + (f ? f.errorPct + '%' : '—') + '</td>' +
                     '<td>' + (f ? f.backClicks : '—') + '</td>' +
@@ -608,6 +666,58 @@
         return '<span class="status-pill status-good">✓ OK</span>';
     }
 
+    // Whole visits (open to close) and the pages people left from
+    function renderVisits() {
+        var v = dashboard.visits;
+        var startedPct = percent(v.startedApplication, v.sessions);
+        el.visitKpiRow.innerHTML = kpiTilesHtml([
+            { label: 'Visits', value: v.sessions, caption: 'Started in the date range' },
+            { label: 'Avg. Visit Length', value: v.avgVisitSeconds === null ? '—' : formatDuration(Math.round(v.avgVisitSeconds)), caption: 'Opening the site to leaving it' },
+            { label: 'Started an Application', value: startedPct === null ? '—' : startedPct + '%', caption: v.startedApplication + ' of ' + v.sessions + ' visits' }
+        ]);
+
+        var totalExits = v.exitPages.reduce(function (sum, page) { return sum + page.exits; }, 0);
+        el.exitPagesBody.innerHTML = v.exitPages.length === 0
+            ? '<tr><td colspan="5" class="text-muted small">No visits tracked for these filters yet.</td></tr>'
+            : v.exitPages.map(function (page) {
+                var isQuick = page.page === 'apply' && dashboard.quickExitSteps.indexOf(page.stepNumber) !== -1;
+                return '<tr>' +
+                    '<td class="fw-semibold">' + escapeHtml(exitPageLabel(page)) +
+                        (isQuick ? ' <span class="status-pill status-warning ms-1">Quick exit</span>' : '') + '</td>' +
+                    '<td>' + page.exits + '</td>' +
+                    '<td>' + percent(page.exits, totalExits) + '%</td>' +
+                    '<td>' + (page.avgSecondsOnPage === null ? '—' : formatDuration(Math.round(page.avgSecondsOnPage))) + '</td>' +
+                    '<td>' + (page.avgVisitSeconds === null ? '—' : formatDuration(Math.round(page.avgVisitSeconds))) + '</td>' +
+                '</tr>';
+            }).join('');
+    }
+
+    function exitPageLabel(page) {
+        if (page.page === 'apply') {
+            return page.stepNumber ? 'Application step ' + page.stepNumber + ': ' + FUNNEL_STAGES[page.stepNumber - 1].label : 'Application';
+        }
+        return EXIT_PAGE_LABELS[page.page] || humanize(page.page);
+    }
+
+    // Preliminary eligibility rules; with a state filter, that state's rules plus the ones for every state
+    function renderRules() {
+        var shown = rules.filter(function (r) { return !filters.state || r.state === 'ALL' || r.state === filters.state; })
+            .filter(function (r) { return !filters.line || r.lineCode === filters.line; });
+        el.rulesTableBody.innerHTML = shown.length === 0
+            ? '<tr><td colspan="4" class="text-muted small">No rules for these filters.</td></tr>'
+            : shown.map(function (r) {
+                return '<tr>' +
+                    '<td class="text-nowrap">' + (r.state === 'ALL' ? 'All states' : escapeHtml(stateName(r.state))) + '</td>' +
+                    '<td>' + escapeHtml(LINE_LABELS[r.lineCode] || r.lineCode) + '</td>' +
+                    '<td>' + escapeHtml(r.when) + '</td>' +
+                    '<td>' + escapeHtml(r.effect) +
+                        (r.source ? '<div class="small text-muted">Source: ' + escapeHtml(r.source) + '</div>' : '') +
+                        (r.needsVerification ? '<div><span class="badge verify-badge mt-1">Needs verification</span></div>' : '') +
+                    '</td>' +
+                '</tr>';
+            }).join('');
+    }
+
     function openStepDetail(index) {
         var stage = funnelStages()[index];
         var stepNumber = index + 1;
@@ -626,7 +736,7 @@
                 detailRow('Tracked visits', f.visits) +
                 detailRow('Avg. dwell time', f.dwellSec === null ? '—' : formatDuration(f.dwellSec)) +
                 detailRow('Exit rate', f.exitPct + '%') +
-                detailRow('Quick-exit rate (&lt; ' + dashboard.quickExitSeconds + 's)', f.quickExitPct + '%') +
+                (f.quickExitPct !== null ? detailRow('Quick-exit rate (left on this step)', f.quickExitPct + '%') : '') +
                 detailRow('Validation-error rate', f.errorPct + '%') +
                 detailRow('Back clicks', f.backClicks) +
                 detailRow('Status', statusPillHtml(f.tier));
@@ -730,7 +840,9 @@
             return apiRequest('GET', '/applications/' + id + '/quote').then(function (quote) {
                 if (openAppId === id) renderQuoteSummary(quote);
             }, function (err) {
-                if (openAppId === id) document.getElementById('appQuote').textContent = err.message;
+                if (openAppId !== id) return;
+                document.getElementById('appQuote').textContent = err.message;
+                document.getElementById('appFlags').textContent = '';
             });
         }).catch(function (err) {
             if (openAppId !== id) return;
@@ -749,10 +861,14 @@
                 detailRow('State', escapeHtml(stateName(app.stateCode))) +
                 detailRow('Status', statusBadgeHtml(app.status)) +
                 detailRow('Assigned to', escapeHtml(app.assignedTo || 'Unassigned')) +
+                detailRow('Applied as', app.hasAccount ? 'Signed-in customer (can save and come back)' : 'Guest') +
                 detailRow('Started', formatDateTime(app.createdAt)) +
                 detailRow('Submitted', app.submittedAt ? formatDateTime(app.submittedAt) : '—') +
                 (app.rejectionReason ? detailRow('Rejection reason', escapeHtml(app.rejectionReason)) : '') +
             '</dl>';
+
+        html += '<h6 class="detail-heading">Review Flags <span class="badge mock-badge ms-1">PRELIMINARY RULES</span></h6>' +
+            '<div class="small mb-3" id="appFlags"><span class="text-muted">Checking…</span></div>';
 
         html += '<h6 class="detail-heading">Demo Estimate <span class="badge mock-badge ms-1">NOT A REAL QUOTE</span></h6>' +
             '<div class="small mb-3" id="appQuote"><span class="text-muted">Calculating…</span></div>';
@@ -833,8 +949,30 @@
             return '<li><strong>' + (LINE_LABELS[line.lineCode] || escapeHtml(line.lineCode)) + ':</strong> ' + escapeHtml(value) +
                 (extra ? '<div class="text-muted">' + escapeHtml(extra) + '</div>' : '') + '</li>';
         }).join('') + '</ul>';
-        html += '<div class="text-muted">National-average ballpark (' + escapeHtml(quote.ruleVersion) + '), not adjusted for state.</div>';
+        html += '<div class="text-muted">National-average ballpark (' + escapeHtml(quote.ruleVersion) + ') with preliminary state adjustments.</div>';
         document.getElementById('appQuote').innerHTML = html;
+        renderFlags(quote.flags || []);
+    }
+
+    // What the preliminary rules found, and the status they point to (see "What does each status mean?")
+    function renderFlags(flags) {
+        var order = ['refer', 'review', 'info'];
+        flags = flags.slice().sort(function (a, b) { return order.indexOf(a.severity) - order.indexOf(b.severity); });
+        var suggestion = flags.some(function (f) { return f.severity === 'refer'; })
+            ? '<strong>Suggested: Escalate.</strong> A specialist rule applies.'
+            : flags.some(function (f) { return f.severity === 'review'; })
+                ? '<strong>Suggested: Start review</strong> and check the flagged items before approving.'
+                : '<strong>No flags.</strong> Can be approved after a standard review.';
+
+        var html = '<p class="mb-2">' + suggestion + '</p>';
+        if (flags.length > 0) {
+            html += '<ul class="list-unstyled flag-list mb-0">' + flags.map(function (f) {
+                var meta = FLAG_META[f.severity] || FLAG_META.info;
+                return '<li><span class="status-pill ' + meta.cls + ' me-1">' + meta.label + '</span>' +
+                    '<strong>' + escapeHtml(LINE_LABELS[f.lineCode] || f.lineCode) + ':</strong> ' + escapeHtml(f.message) + '</li>';
+            }).join('') + '</ul>';
+        }
+        document.getElementById('appFlags').innerHTML = html;
     }
 
     function moneyRange(low, high) {
@@ -938,6 +1076,7 @@
         if (value === 'yes') return 'Yes';
         if (value === 'no') return 'No';
         if (key === 'coverage_components') return value.split(',').join(', ');
+        if (key === 'protective_devices') return value.split(',').map(function (v) { return optionLabel(key, v); }).join(', ');
         if (key === 'square_feet') return formatNumber(value);
         return optionLabel(key, value);
     }
