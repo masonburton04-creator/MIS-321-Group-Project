@@ -1290,6 +1290,7 @@
 
     function showAppStep(step) {
         app.step = step;
+        if (step === 2) initAddressLookup(); // retry if the page loaded while the API was down
         el.appSteps.forEach(function (form) {
             form.classList.toggle('d-none', parseInt(form.getAttribute('data-step'), 10) !== step);
         });
@@ -1858,22 +1859,44 @@
     // and typing an address by hand is always allowed.
     // ---------------------------------------------------------------
 
+    // 'idle' (not tried, or the API was down: try again later) | 'loading' | 'ready' | 'failed' (Google said no)
+    var mapsState = 'idle';
+
+    // Runs at page load AND each time the Details step opens, so a page opened while the API
+    // was down still gets the address search once the API is back (no reload needed).
     function initAddressLookup() {
+        if (mapsState !== 'idle') return;
+        mapsState = 'loading';
         apiRequest('GET', '/config/maps-key').then(function (result) {
-            if (!result || !result.key) return;
-            window.valentMapsReady = setupAddressSearch;
+            if (!result || !result.key) {
+                mapsState = 'failed';
+                console.info('Address search is off: no Google Maps key in the API\'s user secrets (Google:MapsBrowserKey).');
+                return;
+            }
+            window.valentMapsReady = function () {
+                mapsState = 'ready';
+                setupAddressSearch();
+            };
             // Google calls this when the key is rejected (e.g. this page's address isn't on the key's website list)
             window.gm_authFailure = function () {
+                mapsState = 'failed';
                 hideAddressSearch();
-                console.warn('Google Maps rejected the API key. Check the key\'s website restrictions in Google Cloud.');
+                console.warn('Google Maps rejected the API key for ' + location.origin +
+                    '. Open the site at http://localhost:5500 or http://127.0.0.1:5500, or add this address to the key\'s website restrictions in Google Cloud.');
             };
             var script = document.createElement('script');
             script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(result.key) +
                 '&v=weekly&loading=async&callback=valentMapsReady';
             script.async = true;
-            script.onerror = hideAddressSearch;
+            script.onerror = function () {
+                mapsState = 'idle'; // offline or blocked: try again next time
+                script.remove();
+                hideAddressSearch();
+            };
             document.head.appendChild(script);
-        }).catch(function () { /* API not running: addresses are typed by hand */ });
+        }).catch(function () {
+            mapsState = 'idle'; // API not running: typed by hand for now, retried when the Details step opens
+        });
     }
 
     function setupAddressSearch() {
