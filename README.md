@@ -1,76 +1,25 @@
 # Valent Partners: Insurance Quote & Application Prototype
 
-Team 6, MIS 321. A website where customers compare Homeowners, Flood, Jewelry, and Auto
-coverage, apply online, and chat with an AI assistant, plus a dashboard for staff.
+Team 6, MIS 321. Customers compare and apply for Homeowners, Flood, Jewelry, and Auto insurance;
+staff review applications on a dashboard.
 
-| Folder | What it is |
-|---|---|
-| `Client/` | The website (HTML, Bootstrap, JavaScript) |
-| `API/` | The back end (C# / ASP.NET Core), port 5250 |
-| `Database/` | MySQL scripts, run in order |
+**Highlights**
+- Coverage explorer with Alabama / Texas / New York comparisons
+- Online application with state-adjusted demo price estimates and address verification
+- Customer accounts and a My Applications status page
+- "Ask Val" AI chatbot (local Llama via Ollama)
+- Staff dashboard: funnel and friction metrics, escalations to specialists, admin Team page
 
-## What you need
+## Quick setup
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- MySQL Server + MySQL Workbench
-- VS Code with the **Live Server** extension
-- [Ollama](https://ollama.com/download), for the chatbot (optional)
+1. **Database:** in MySQL Workbench, run the `Database/` scripts in number order (skip `06` and `07`).
+2. **Password:** in the `API` folder, run
+   `dotnet user-secrets set "ConnectionStrings:ValentDb" "Server=localhost;Port=3306;Database=valent_insurance;User=root;Password=YOUR_PASSWORD;"`
+3. **Run:** `dotnet run` in `API/`, then open `Client/index.html` with VS Code **Live Server** (port 5500).
 
-## First-time setup
+Optional: chatbot needs [Ollama](https://ollama.com/download) + `ollama pull llama3.2:3b` and `ollama pull nomic-embed-text`.
+Google address search needs the Maps key from a teammate.
 
-**1. Build the database.** In MySQL Workbench, open and run each file in `Database/`, in this order:
+**Demo login** (password `ValentDemo2026!`): customer `tyler.henderson@example.com`, admin `morgan.ellis@valentpartners.example`
 
-```
-01_schema.sql  02_seed.sql  03_mock_data.sql  04_demo_quote_rates.sql
-05_supported_states.sql  08_client_feedback.sql  09_ai_chatbot.sql  10_team_management.sql
-```
-
-Skip `06` and `07` on a new database (they only update old ones). Re-running `01` erases all data.
-If you re-run `03`, re-run `08` after it.
-
-**2. Save your MySQL password** (once per computer). In a terminal in the `API` folder:
-
-```
-dotnet user-secrets set "ConnectionStrings:ValentDb" "Server=localhost;Port=3306;Database=valent_insurance;User=root;Password=YOUR_PASSWORD;"
-```
-
-**3. Optional extras**
-
-- Google address search: get the Maps key from a teammate (never put it in the repo), then
-  `dotnet user-secrets set "Google:MapsBrowserKey" "THE_KEY"`
-- Chatbot: `ollama pull llama3.2:3b` and `ollama pull nomic-embed-text`
-
-## Run the website
-
-1. **Start the API.** In a terminal in the `API` folder: `dotnet run`. Leave it open.
-2. **Check it.** Open http://localhost:5250/api/health and look for `"database":"ok"`.
-3. **Open the site.** In VS Code, right-click `Client/index.html`, then **Open with Live Server**.
-   It must be port **5500** for the Google address search to work.
-
-If Live Server opens a folder list instead of the site, add the path to the address,
-for example `http://localhost:5500/MIS-321-Group-Project/Client/index.html`.
-
-## Demo accounts
-
-Every demo account uses the password `ValentDemo2026!`
-
-| Role | Email | Lands on |
-|---|---|---|
-| Customer | `tyler.henderson@example.com` | Website |
-| Agent | `casey.patel@valentpartners.example` | Dashboard |
-| Specialist | `taylor.nguyen@valentpartners.example` | Dashboard |
-| Admin | `morgan.ellis@valentpartners.example` | Dashboard + Team page |
-
-Anyone can browse without signing in. Applying needs a customer account (or create one on the site).
-
-## Problems?
-
-| What you see | Fix |
-|---|---|
-| "Couldn't reach the server" | The API isn't running: `dotnet run` in `API/` |
-| Health check says `"database":"error"` | MySQL is off, or the password in step 2 is wrong |
-| "Run Database/0X... in MySQL Workbench" | Run that script, then refresh |
-| No "Find your address" box | No Maps key saved, or the site isn't on port 5500 |
-| "The chatbot isn't running" | Open the Ollama app; run the `ollama pull` commands |
-
-More detail (features, endpoints, how the chatbot and estimates work): [API/README.md](API/README.md)
+Details: [API/README.md](API/README.md)
