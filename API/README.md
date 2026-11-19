@@ -8,97 +8,17 @@ in one page). The browser sends requests here, and this API reads and writes the
 Browser (Client/index.html)  --HTTP/JSON-->  API (this folder, port 5250)  --SQL-->  MySQL (valent_insurance)
 ```
 
-## One-time setup
+## Setup and running
 
-1. **Install the .NET 10 SDK** if `dotnet --list-sdks` doesn't show a 10.x version:
-   https://dotnet.microsoft.com/download
+See the [main README](../README.md) for setup, how to run the site, and demo accounts.
+This file is the reference for how the API works.
 
-2. **Create the database.** In MySQL Workbench, run `Database/01_schema.sql`,
-   then `Database/02_seed.sql`. Re-run both any time the SQL files change.
-   Note that re-running deletes all existing data.
+**Settings** (`appsettings.json`, secrets in .NET user secrets, never in the repo):
 
-   Optional: run `Database/03_mock_data.sql` to add fake agent accounts and ~30 fake
-   applications (every status, bundles, vehicles, jewelry, analytics events) so the
-   agent dashboard has something to show. It can be re-run at any time and only replaces
-   its own mock rows. Your real test applications are left alone.
-
-   Then run `Database/04_demo_quote_rates.sql`. It creates the `demo_quote_factors` table the
-   Quote step uses for its price range. The numbers are national averages times a cited state multiplier (rule version `demo-2026-11`; re-run this script to get them) plus placeholders,
-   with sources in the table, and every estimate is labeled "DEMO ESTIMATE, not a real quote".
-   Edit the numbers in Workbench any time; no API restart needed.
-
-   Then run `Database/05_supported_states.sql`. It limits applications to the sprint's demo
-   states (Alabama, Texas, New York). Re-run it after re-running `02_seed.sql`.
-
-   If your database was created before current-policy uploads were added, also run
-   `Database/06_application_documents.sql` once (not needed right after `01_schema.sql`).
-   Same for dashboard sign-in: run `Database/07_staff_sessions.sql` once.
-
-   Then run `Database/08_client_feedback.sql` (always, also on a fresh database). It adds customer
-   accounts, the specialist role, rejection reasons, ZIP risk ratings (demo values), and demo
-   specialist/customer accounts. Safe to re-run; re-run it after re-running `03_mock_data.sql`.
-
-   Then run `Database/10_team_management.sql` (always). It adds the admin Team page's
-   "Auto-assign" switch (`staff_users.auto_assign`). Safe to re-run.
-
-   Then run `Database/09_ai_chatbot.sql` (always). It adds the chatbot's metric columns to
-   `chat_sessions` / `chat_messages` and demo conversations for the dashboard. Safe to re-run.
-
-3. **Save your MySQL connection string** (once per computer). In a terminal in this `API` folder:
-
-   ```
-   dotnet user-secrets set "ConnectionStrings:ValentDb" "Server=localhost;Port=3306;Database=valent_insurance;User=root;Password=YOUR_PASSWORD;"
-   ```
-
-   Replace `YOUR_PASSWORD` with your MySQL root password. User secrets are stored
-   in your Windows user profile, not in this folder, so the password never gets committed to GitHub.
-
-4. **Optional: Google address search.** Save a Google Maps browser key (Maps JavaScript API +
-   Places API (New), restricted to `http://localhost:5500/*` and `http://127.0.0.1:5500/*`):
-
-   ```
-   dotnet user-secrets set "Google:MapsBrowserKey" "AIza..."
-   ```
-
-   The site reads it from `GET /api/config/maps-key`. Without a key, the address fields still
-   work; they just don't suggest or verify addresses. Share the key with teammates privately, never in the repo.
-
-5. **Chatbot ("Ask Val").** Install [Ollama](https://ollama.com/download) (it runs Llama models on your
-   computer, free, no account), then download the model once:
-
-   ```
-   ollama pull llama3.2:3b
-   ollama pull nomic-embed-text
-   ```
-
-   (`nomic-embed-text`, 270 MB, powers the document search below.)
-
-   The model is set in `appsettings.json` under `"Ollama"`. `llama3.2:3b` (2 GB) answers in 1-2 seconds
-   on a laptop; `llama3.1` (8B, 4.9 GB) writes better answers but needs about 5 GB of free memory and is
-   several times slower. Without Ollama, the chat shows "The chatbot isn't running" and its Quick
-   estimate form still works.
-
-## Running it
-
-In a terminal in this `API` folder:
-
-```
-dotnet run
-```
-
-Leave that terminal open. To check it's working, open http://localhost:5250/api/health in a browser:
-
-- `"database":"ok"`: everything is connected.
-- `"database":"error"`: read the `message`. Usually a wrong password in step 3, or MySQL isn't running.
-
-Then open `Client/index.html` with VS Code **Live Server** (right-click > Open with Live Server).
-Use Live Server, not a double-click: Google rejects the address search on `file://` pages.
-
-- **Customers** can browse and compare without an account. **Start Application** asks them to sign
-  in or create an account, then continues to the form.
-- **Staff** sign in on the same Sign in screen and land on the dashboard.
-
-The old `Sprint 1 Mockups/` folders are kept for reference only; `Client/` replaces both.
+- `ConnectionStrings:ValentDb` (user secret): the MySQL connection string
+- `Google:MapsBrowserKey` (user secret, optional): address search; restrict the key to `http://localhost:5500/*`
+- `Ollama`: chatbot model (`llama3.2:3b`) and embedding model (`nomic-embed-text`). `llama3.1` (8B) writes
+  better answers but needs about 5 GB of free memory and is several times slower.
 
 ## Sign-in
 
