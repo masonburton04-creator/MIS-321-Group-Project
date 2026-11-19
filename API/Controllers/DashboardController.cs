@@ -123,14 +123,110 @@ public class DashboardController : ControllerBase
             }
         }
 
-        result.Agents = await LoadAgentUsageAsync(conn, filter, AddFilterParams);
+        result.Agents = await LoadAgentUsageAsync(conn, filter, AddFilterParams, AuthController.CurrentStaffId(User));
         result.Pricing = await LoadPricingAsync(conn, filter, AddFilterParams, line?.Trim().ToUpperInvariant());
+        result.Rejections = await LoadRejectionsAsync(conn, filter, AddFilterParams);
+        result.Zips = await LoadZipActivityAsync(conn, filter, AddFilterParams);
+        result.Chat = await LoadChatUsageAsync(conn, state?.Trim().ToUpperInvariant(), line?.Trim().ToUpperInvariant(), from);
 
         return Ok(result);
     }
 
+    // How customers use the AI chatbot (09_ai_chatbot.sql). The same filters apply:
+    // state = the state picked on the site, line = the question's topic, range = when it was asked.
+    private static async Task<ChatUsage> LoadChatUsageAsync(MySqlConnection conn, string? state, string? line, DateTime? from)
+    {
+        var usage = new ChatUsage();
+        var where = "m.sender = 'assistant'"
+            + (string.IsNullOrEmpty(state) ? "" : " AND s.state_code = @state")
+            + (string.IsNullOrEmpty(line) ? "" : " AND (m.topic = @line OR FIND_IN_SET(@line, m.quote_lines))")
+            + (from == null ? "" : " AND m.sent_at >= @from");
+
+        void AddParams(MySqlCommand cmd)
+        {
+            cmd.Parameters.AddWithValue("@state", state);
+            cmd.Parameters.AddWithValue("@line", line);
+            cmd.Parameters.AddWithValue("@from", from);
+        }
+
+        try
+        {
+            var totals = new MySqlCommand(
+                $@"SELECT COUNT(DISTINCT m.chat_id) AS conversations,
+                          COUNT(*) AS replies,
+                          AVG(CASE WHEN m.quote_source IS NULL OR m.quote_source = 'chat' THEN m.first_token_ms END) AS first_ms,
+                          AVG(CASE WHEN m.quote_source IS NULL OR m.quote_source = 'chat' THEN m.total_ms END) AS total_ms,
+                          COALESCE(SUM(m.outcome = 'quote'), 0) AS quotes,
+                          COALESCE(SUM(m.outcome = 'quote' AND m.quote_source = 'form'), 0) AS quotes_form,
+                          COALESCE(SUM(m.outcome = 'quote_incomplete'), 0) AS quotes_incomplete,
+                          COALESCE(SUM(m.outcome = 'quote_referred'), 0) AS quotes_referred,
+                          COALESCE(SUM(m.outcome = 'off_topic'), 0) AS off_topic,
+                          COALESCE(SUM(m.outcome = 'error'), 0) AS errors,
+                          COALESCE(SUM(m.helpful = TRUE), 0) AS helpful,
+                          COALESCE(SUM(m.helpful = FALSE), 0) AS not_helpful,
+                          COUNT(DISTINCT CASE WHEN s.clicked_apply THEN s.chat_id END) AS apply_clicks,
+                          COUNT(DISTINCT CASE WHEN s.account_id IS NOT NULL THEN s.chat_id END) AS signed_in,
+                          COUNT(DISTINCT CASE WHEN s.is_mock THEN s.chat_id END) AS demo
+                   FROM chat_messages m
+                   JOIN chat_sessions s ON s.chat_id = m.chat_id
+                   WHERE {where}", conn);
+            AddParams(totals);
+            await using (var reader = await totals.ExecuteReaderAsync())
+            {
+                await reader.ReadAsync();
+                int Int(string name) => Convert.ToInt32(reader[name]);
+                int? Ms(string name) => reader.IsDBNull(reader.GetOrdinal(name)) ? null : (int)Math.Round(Convert.ToDouble(reader[name]));
+                usage.Conversations = Int("conversations");
+                usage.Questions = Int("replies");   // one reply per question
+                usage.AvgFirstWordMs = Ms("first_ms");
+                usage.AvgReplyMs = Ms("total_ms");
+                usage.Quotes = Int("quotes");
+                usage.QuotesFromForm = Int("quotes_form");
+                usage.QuotesNeedMoreInfo = Int("quotes_incomplete");
+                usage.QuotesReferred = Int("quotes_referred");
+                usage.OffTopic = Int("off_topic");
+                usage.Errors = Int("errors");
+                usage.RatedHelpful = Int("helpful");
+                usage.RatedNotHelpful = Int("not_helpful");
+                usage.ApplyClicks = Int("apply_clicks");
+                usage.SignedInConversations = Int("signed_in");
+                usage.DemoConversations = Int("demo");
+                usage.AvgQuestionsPerConversation = usage.Conversations == 0
+                    ? null : Math.Round((double)usage.Questions / usage.Conversations, 1);
+            }
+
+            var topics = new MySqlCommand(
+                $@"SELECT COALESCE(m.topic, 'GENERAL') AS topic, COUNT(*) AS questions,
+                          COALESCE(SUM(m.outcome = 'quote'), 0) AS quotes
+                   FROM chat_messages m
+                   JOIN chat_sessions s ON s.chat_id = m.chat_id
+                   WHERE {where}
+                   GROUP BY COALESCE(m.topic, 'GENERAL')
+                   ORDER BY questions DESC", conn);
+            AddParams(topics);
+            await using (var reader = await topics.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    usage.Topics.Add(new ChatTopicCount
+                    {
+                        Topic = reader.GetString("topic"),
+                        Questions = Convert.ToInt32(reader["questions"]),
+                        Quotes = Convert.ToInt32(reader["quotes"])
+                    });
+                }
+            }
+        }
+        catch (MySqlException ex) when (ex.ErrorCode is MySqlErrorCode.BadFieldError or MySqlErrorCode.NoSuchTable)
+        {
+            usage.Error = "Chatbot metrics aren't set up. Run Database/09_ai_chatbot.sql in MySQL Workbench.";
+        }
+        return usage;
+    }
+
     // How often applications need an agent, plus each agent's status changes
-    private static async Task<AgentUsage> LoadAgentUsageAsync(MySqlConnection conn, string filter, Action<MySqlCommand> addFilterParams)
+    private static async Task<AgentUsage> LoadAgentUsageAsync(MySqlConnection conn, string filter,
+        Action<MySqlCommand> addFilterParams, int currentStaffId)
     {
         var usage = new AgentUsage();
 
@@ -139,7 +235,9 @@ public class DashboardController : ControllerBase
                       COALESCE(SUM(EXISTS (SELECT 1 FROM application_status_history h
                                            WHERE h.application_id = a.application_id AND h.changed_by IS NOT NULL)), 0) AS handled,
                       COALESCE(SUM(EXISTS (SELECT 1 FROM application_status_history h
-                                           WHERE h.application_id = a.application_id AND h.new_status = 'escalated')), 0) AS escalated
+                                           WHERE h.application_id = a.application_id AND h.new_status = 'escalated')), 0) AS escalated,
+                      COALESCE(SUM(a.auto_decision = 'approved'), 0) AS auto_approved,
+                      COALESCE(SUM(a.auto_decision = 'escalated'), 0) AS auto_escalated
                FROM applications a
                WHERE a.submitted_at IS NOT NULL AND {filter}", conn);
         addFilterParams(summaryCmd);
@@ -149,6 +247,20 @@ public class DashboardController : ControllerBase
             usage.Submitted = Convert.ToInt32(reader["submitted"]);
             usage.HandledByAgent = Convert.ToInt32(reader["handled"]);
             usage.Escalated = Convert.ToInt32(reader["escalated"]);
+            usage.AutoApproved = Convert.ToInt32(reader["auto_approved"]);
+            usage.AutoEscalated = Convert.ToInt32(reader["auto_escalated"]);
+        }
+
+        // Open escalations ignore the filters: the alert banner should never hide one
+        var openCmd = new MySqlCommand(
+            @"SELECT COUNT(*) AS open_all, COALESCE(SUM(assigned_staff_id = @me), 0) AS open_mine
+              FROM applications WHERE status = 'escalated'", conn);
+        openCmd.Parameters.AddWithValue("@me", currentStaffId);
+        await using (var reader = await openCmd.ExecuteReaderAsync())
+        {
+            await reader.ReadAsync();
+            usage.OpenEscalations = Convert.ToInt32(reader["open_all"]);
+            usage.OpenEscalationsForMe = Convert.ToInt32(reader["open_mine"]);
         }
 
         // Only agents with at least one action on a matching application are listed
@@ -186,6 +298,88 @@ public class DashboardController : ControllerBase
             }
         }
         return usage;
+    }
+
+    // Rejected applications by reason (the client wants to see WHY people are rejected)
+    private static async Task<List<RejectionCount>> LoadRejectionsAsync(MySqlConnection conn, string filter,
+        Action<MySqlCommand> addFilterParams)
+    {
+        var cmd = new MySqlCommand(
+            $@"SELECT COALESCE(a.rejection_code, 'none') AS code,
+                      COALESCE(r.agent_label, 'No reason recorded') AS label,
+                      COUNT(*) AS n
+               FROM applications a
+               LEFT JOIN rejection_reasons r ON r.code = a.rejection_code
+               WHERE a.status = 'rejected' AND {filter}
+               GROUP BY COALESCE(a.rejection_code, 'none'), COALESCE(r.agent_label, 'No reason recorded')
+               ORDER BY n DESC, label", conn);
+        addFilterParams(cmd);
+        var list = new List<RejectionCount>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            list.Add(new RejectionCount
+            {
+                Code = reader.GetString("code"), Label = reader.GetString("label"), Count = Convert.ToInt32(reader["n"])
+            });
+        }
+        return list;
+    }
+
+    // Applications per ZIP (property ZIP, or the first vehicle's ZIP for auto-only applications),
+    // joined to the ZIP's hazard ratings. Busiest ZIPs first.
+    private static async Task<List<ZipActivity>> LoadZipActivityAsync(MySqlConnection conn, string filter,
+        Action<MySqlCommand> addFilterParams)
+    {
+        var cmd = new MySqlCommand(
+            $@"SELECT z.zip, MAX(z.state_code) AS state_code, COUNT(*) AS apps,
+                      COALESCE(SUM(z.status = 'approved'), 0) AS approved,
+                      COALESCE(SUM(z.status = 'rejected'), 0) AS rejected,
+                      COALESCE(SUM(z.status = 'escalated'), 0) AS escalated,
+                      MAX(r.zip_code) AS zip_code, MAX(r.state_code) AS risk_state, MAX(r.place_name) AS place_name,
+                      MAX(r.flood_risk) AS flood_risk, MAX(r.wind_risk) AS wind_risk, MAX(r.hail_risk) AS hail_risk,
+                      MAX(r.wildfire_risk) AS wildfire_risk, MAX(r.is_mock) AS is_mock, MAX(r.source) AS source
+               FROM (SELECT a.application_id, a.status, a.state_code,
+                            COALESCE((SELECT ans.field_value FROM application_answers ans
+                                      WHERE ans.application_id = a.application_id AND ans.field_key = 'zip'),
+                                     (SELECT i.field_value FROM application_item_answers i
+                                      WHERE i.application_id = a.application_id AND i.item_type = 'vehicle'
+                                        AND i.item_number = 1 AND i.field_key = 'garaging_zip')) AS zip
+                     FROM applications a WHERE {filter}) z
+               LEFT JOIN zip_risk_factors r ON r.zip_code = z.zip
+               WHERE z.zip IS NOT NULL
+               GROUP BY z.zip
+               ORDER BY apps DESC, z.zip
+               LIMIT 25", conn);
+        addFilterParams(cmd);
+        var list = new List<ZipActivity>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var hasRisk = !reader.IsDBNull(reader.GetOrdinal("zip_code"));
+            list.Add(new ZipActivity
+            {
+                Zip = reader.GetString("zip"),
+                StateCode = reader.IsDBNull(reader.GetOrdinal("state_code")) ? null : reader.GetString("state_code"),
+                Applications = Convert.ToInt32(reader["apps"]),
+                Approved = Convert.ToInt32(reader["approved"]),
+                Rejected = Convert.ToInt32(reader["rejected"]),
+                Escalated = Convert.ToInt32(reader["escalated"]),
+                Risk = !hasRisk ? null : new ZipRisk
+                {
+                    ZipCode = reader.GetString("zip_code"),
+                    StateCode = reader.GetString("risk_state"),
+                    PlaceName = reader.GetString("place_name"),
+                    Flood = Convert.ToInt32(reader["flood_risk"]),
+                    Wind = Convert.ToInt32(reader["wind_risk"]),
+                    Hail = Convert.ToInt32(reader["hail_risk"]),
+                    Wildfire = Convert.ToInt32(reader["wildfire_risk"]),
+                    IsMock = Convert.ToBoolean(reader["is_mock"]),
+                    Source = reader.IsDBNull(reader.GetOrdinal("source")) ? null : reader.GetString("source")
+                }
+            });
+        }
+        return list;
     }
 
     // Min / max / average demo estimate per line for applications that reached the Quote step.

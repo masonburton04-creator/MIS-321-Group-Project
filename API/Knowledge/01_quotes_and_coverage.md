@@ -1,0 +1,69 @@
+# Valent Partners: How Estimates Work, and Homeowners, Flood, and Jewelry Basics
+
+<!--
+Context document for the Ask Val chatbot (searched with embeddings, see API/Services/KnowledgeBase.cs).
+Every "## " section is one search chunk, so each section has to make sense on its own.
+Sources: Database/04_demo_quote_rates.sql, API/Services/DemoQuoteEngine.cs, API/Services/ApplicationRules.cs,
+Client/Resources/scripts/customer.js, and Team_6_Insurance_Research_for_Claude.md (sections 4-6, 8, 10).
+If you change a rate in 04_demo_quote_rates.sql or a rule in ApplicationRules.cs, update this file too.
+-->
+
+## What a Valent Partners demo estimate is
+
+Every price on the Valent Partners website is a DEMO ESTIMATE: a ballpark yearly price range built from public national averages, adjusted for the customer's state with a state multiplier, plus placeholder adjustments. It is not a real quote and not an offer of coverage. Real prices depend on the insurance company's filed rates, the property or vehicle, claims history, and the exact location. A licensed agent or specialist gives the real price after the customer submits an application. Estimates are shown as a low-to-high range per year, rounded outward to the nearest $10 so they don't look falsely precise. The rates are version "demo-2026-11".
+
+## How estimates are adjusted for Alabama, Texas, and New York
+
+Each estimate is multiplied by a state multiplier: the state's average premium divided by the national average, both taken from the same published table and year. Homeowners (NAIC 2023 average HO-3 premium; US $1,737): Alabama 1.10 ($1,906), Texas 1.65 ($2,864), New York 1.04 ($1,801). Flood (average NFIP premium from OpenFEMA policy data, 12 months to August 2026; US $955): Alabama 0.96 ($917), Texas 1.00 ($958), New York 1.25 ($1,194). Auto liability only (NAIC 2022/2023 Auto Insurance Database Report, 2023 liability average premium; US $736.65): Alabama 0.78, Texas 1.08, New York 1.51. Auto full coverage (same report, 2023 combined average premium for liability plus collision plus comprehensive; US $1,438.60): Alabama 0.88, Texas 1.20, New York 1.32. Jewelry uses 1.00 in every state because no state-level jewelry premium data was found. So Texas homeowners estimates are about 65% above the national average, and New York auto liability about 51% above.
+
+## Estimate status words: demo estimate, incomplete, referred
+
+An estimate can have one of three statuses. DEMO ESTIMATE means a dollar range was calculated from national averages. INCOMPLETE means answers the estimate needs are missing, such as the home's rebuild cost or the flood zone, so no number is shown until they are given. REFERRED means a specialist has to price it individually and no number is shown; this happens for homes over $1,000,000 to rebuild, flood zones V/VE (coastal high risk), and vehicles used for business, rideshare, or delivery. A combined total for several insurance types is only shown when every type has a dollar range.
+
+## How the homeowners estimate is calculated
+
+The homeowners estimate uses the dwelling coverage amount (Coverage A), which should be the cost to rebuild the home, not its market or sale price. The national average yearly price is $8.08 for every $1,000 of dwelling coverage, from the Bankrate national average (November 2025: $2,424 per year for $300,000 of dwelling coverage). That is multiplied by the state's homeowners multiplier (Alabama 1.10, Texas 1.65, New York 1.04). The low end of the range is the result times 0.60 and the high end times 1.60, because homes within a state still vary widely. Examples for $300,000 rebuild cost: Alabama about $1,590 to $4,270 per year; Texas about $2,390 to $6,400; New York about $1,510 to $4,040. Homes that cost more than $1,000,000 to rebuild are not estimated; a specialist prices them. The application accepts rebuild costs from $50,000 to $50,000,000.
+
+## How the flood estimate is calculated
+
+The flood estimate starts from the average NFIP flood policy price of about $888 per year (Kiplinger citing FEMA/NFIP data). It needs the building coverage amount, the contents (belongings) coverage amount, and the flood zone. That average is multiplied by the state's flood multiplier (Alabama 0.96, Texas 1.00, New York 1.25). For zone X (moderate or low risk), the range is the result times 0.15 to times 1.00, since low-risk policies start a little over $100: Alabama about $120 to $860 per year, Texas $130 to $890, New York $160 to $1,110. For zone A or AE (high risk), or when the zone is unknown, the range is the result times 0.50 to times 2.50: Alabama about $420 to $2,140, Texas $440 to $2,220, New York $550 to $2,780. Zone V or VE (coastal high risk) is never estimated; a flood specialist prices it. Real flood pricing also depends on elevation, the building, and distance to water. NFIP policies usually have a 30-day waiting period.
+
+## How the jewelry estimate is calculated
+
+The jewelry estimate is 1% to 2% of the total value of all items per year, based on industry articles (BriteCo, Worthy, InsuranceNewsNet). It is the same in Alabama, Texas, and New York (state multiplier 1.00), because no state-level jewelry price data was found. Example: one ring worth $6,000 gives about $60 to $120 per year; items worth $6,000 and $1,500 ($7,500 total) give about $70 to $150 per year. Each item needs an estimated value. Items without a professional appraisal may need one before they can be insured, and items over $5,000 need an appraisal to be approved automatically.
+
+## How the auto estimate is calculated
+
+The auto estimate is per vehicle per year. Liability-only coverage uses published averages of $623 (NerdWallet 2025) to $820 (Bankrate 2025). Full coverage (liability plus collision and comprehensive) uses $2,285 (NerdWallet 2025) to $2,697 (Bankrate 2025). Both are multiplied by the state's auto multiplier, which differs for liability only (Alabama 0.78, Texas 1.08, New York 1.51) and full coverage (Alabama 0.88, Texas 1.20, New York 1.32). The low end is then times 0.60 and the high end times 1.50, and both are multiplied by the number of vehicles. Recent accidents, claims, or violations multiply the high end by 1.5. A driver licensed fewer than 3 years also multiplies the high end by 1.5. Examples for 1 vehicle, no incidents, experienced driver: full coverage is about $1,200 to $3,570 per year in Alabama, $1,640 to $4,860 in Texas, and $1,800 to $5,350 in New York; liability only is about $290 to $960 in Alabama, $400 to $1,330 in Texas, and $560 to $1,860 in New York. Vehicles used for business, rideshare, or delivery are priced by a licensed agent instead. Lenders usually require collision and comprehensive on financed or leased vehicles.
+
+## Bundles: estimating several insurance types together
+
+A bundle is one application with several insurance types, such as homeowners plus flood or homeowners plus jewelry. Each type is estimated separately with its own formula, and a combined total is shown only when every type has a dollar range. Any multi-policy (bundle) discount is NOT included in Valent Partners estimates, because discounts depend on the insurance company's rules. Flood policies through the NFIP usually don't count toward bundle discounts. Bundling usually means several coordinated policies, not one combined policy, and buying separately can sometimes be better.
+
+## What happens after submitting: automatic approval and specialists
+
+When a customer submits an application, simple demo rules decide the next step. Yes, Jewelry applications and Auto applications CAN be approved automatically, right after submitting, when they meet these rules. Jewelry: $25,000 or less in total, and a professional appraisal for every item worth more than $5,000. Auto: no recent accidents, claims, or violations; 1 to 4 vehicles; no business, rideshare, or delivery use; every driver licensed at least 3 years. Homeowners and Flood applications are NEVER approved automatically; a person always reviews them, and if an application includes Homeowners or Flood, the whole application is reviewed by a person. Homes with more than $1,000,000 of dwelling coverage go straight to a specialist. Anything that doesn't meet the rules waits for an agent. Customers follow the status on My Applications, where a rejected application shows the reason. These thresholds are demo placeholders, not final underwriting rules.
+
+## Homeowners insurance: the six main coverages (A to F)
+
+A standard homeowners policy is made of six parts. Coverage A, Dwelling: the structure of the home (walls, roof, foundation, attached structures) against covered losses such as fire and wind; the amount should reflect the cost to rebuild, not the market value. Coverage B, Other Structures: detached structures such as sheds, fences, and detached garages, often set as a percentage of Coverage A. Coverage C, Personal Property: belongings such as furniture, electronics, and clothing. Coverage D, Loss of Use or Additional Living Expense: temporary housing and living costs when a covered loss makes the home unlivable. Coverage E, Personal Liability: protection if the household is responsible for injury or property damage to others. Coverage F, Medical Payments to Others: limited medical costs for guests hurt on the property, regardless of fault.
+
+## Homeowners insurance: what is usually not covered, and things to check
+
+Standard homeowners policies typically do not cover flood or earth movement (earthquakes); flood needs a separate flood policy. Damage from lack of maintenance is usually not covered. Structures used for business may have reduced or no coverage under Coverage B. Personal property (Coverage C) may pay Replacement Cost Value (the cost to replace new) or Actual Cash Value (replacement cost minus depreciation), depending on the policy. Jewelry, art, and collectibles usually have special sub-limits under Coverage C and may need scheduled or separate coverage. Liability (Coverage E) excludes intentional acts and certain business activities, and limits can usually be raised or extended with an umbrella policy. Medical Payments (Coverage F) usually does not apply to people who live in the household. Rebuild cost and market value are different numbers.
+
+## Flood insurance: building and contents coverage
+
+Flood insurance is a separate policy from homeowners insurance, from the National Flood Insurance Program (NFIP, a federal program) or a private insurer. It has two parts that are chosen separately, each with its own deductible. Building property covers the structure and its built-in parts against direct flood damage; NFIP residential building coverage commonly goes up to $250,000. Contents covers belongings such as furniture, clothing, and electronics; NFIP residential contents coverage commonly goes up to $100,000. Contents is never included automatically with building coverage, and renters can buy contents coverage without owning the building. One flood claim can involve two deductibles. A higher deductible generally lowers the price but raises out-of-pocket costs.
+
+## Flood insurance: limits, waiting period, zones, and lenders
+
+NFIP policies generally take effect 30 days after purchase, with some exceptions (for example, when a lender requires flood coverage at a home purchase or refinance), so buying right before a storm usually doesn't help. Coverage for basements and enclosed areas below the lowest floor is limited, and NFIP flood policies generally do not pay temporary living expenses the way homeowners Coverage D does. Flood zones describe mapped risk: zone X is moderate to low risk, zones A and AE are high risk, and zones V and VE are coastal high risk. Low risk is not no risk; FEMA notes floods also cause losses outside high-risk zones. Flood coverage can be required for federally backed mortgages on homes in high-risk flood areas. Private flood may offer higher limits but isn't available everywhere, and a lender may not accept it. The official flood map lookup is FEMA's Map Service Center (msc.fema.gov).
+
+## Jewelry insurance: three ways to insure jewelry
+
+There are three main ways to insure jewelry. First, under a homeowners policy: jewelry counts as personal property (Coverage C), but with special limits, especially for theft, that are often far below what valuable pieces are worth; the limit depends on the insurance company, so check the actual policy instead of a "typical" number. Second, scheduled coverage (a floater or personal-articles option) added to a home policy: each item and its value is listed on the policy for more complete protection, and an appraisal may be required. Third, a standalone jewelry policy from a specialty insurer, separate from homeowners insurance; terms vary widely between insurers.
+
+## Jewelry insurance: covered events, appraisals, and documents
+
+When comparing jewelry coverage, look for theft, accidental loss, mysterious disappearance (the item is gone and you don't know how), damage, and worldwide coverage while traveling. These protections are NOT included in every policy: some policies cover mysterious disappearance and accidental loss and some don't, so the customer has to check the specific policy, and a licensed agent can confirm. Homeowners policies are the most likely to leave them out. Two policies with the same limit can protect very different situations, and a deductible may apply. The insured value of each item affects both the price and what can be recovered after a loss. Helpful documents are an appraisal (with its value and date), the purchase receipt, a certificate or serial number, and photos. High-value items, items with no valuation, and antique or collectible pieces may need specialist review. On Valent Partners, items over $5,000 need a professional appraisal for automatic approval.

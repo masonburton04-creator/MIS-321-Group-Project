@@ -2,7 +2,10 @@ using System.Threading.RateLimiting;
 using API.Controllers;
 using API.Data;
 using API.Services;
+using DnsClient;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Diagnostics;
+using MySqlConnector;
 
 // Helper for creating staff accounts: dotnet run -- hash-password "the password"
 // prints a hash to paste into staff_users.password_hash (see API/README.md).
@@ -25,10 +28,29 @@ builder.Services.AddSingleton(new Database(connectionString));
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
-// Staff sign-in: [Authorize] endpoints need "Authorization: Bearer <token>" from POST /api/auth/login
+// Sign-in: endpoints need "Authorization: Bearer <token>" from POST /api/auth/login.
+// Plain [Authorize] = staff (the default scheme). Customer endpoints name the CustomerToken scheme.
 builder.Services.AddAuthentication(StaffTokenAuthHandler.SchemeName)
-    .AddScheme<AuthenticationSchemeOptions, StaffTokenAuthHandler>(StaffTokenAuthHandler.SchemeName, null);
+    .AddScheme<AuthenticationSchemeOptions, StaffTokenAuthHandler>(StaffTokenAuthHandler.SchemeName, null)
+    .AddScheme<AuthenticationSchemeOptions, CustomerTokenAuthHandler>(CustomerTokenAuthHandler.SchemeName, null);
 builder.Services.AddAuthorization();
+
+// Email domain check for new customer accounts (MX records via the computer's DNS server)
+builder.Services.AddSingleton<ILookupClient>(new LookupClient(new LookupClientOptions
+{
+    Timeout = TimeSpan.FromSeconds(3),
+    Retries = 1,
+    UseCache = true
+}));
+builder.Services.AddSingleton<EmailChecker>();
+
+// AI chatbot: a local Ollama model (settings in appsettings.json "Ollama").
+// One shared client, so it remembers when the model was last loaded.
+var ollamaOptions = builder.Configuration.GetSection("Ollama").Get<OllamaOptions>() ?? new OllamaOptions();
+builder.Services.AddSingleton(ollamaOptions);
+builder.Services.AddSingleton(sp => new OllamaClient(new HttpClient(), ollamaOptions, sp.GetRequiredService<ILogger<OllamaClient>>()));
+// Embedding search over the chatbot's context documents in API/Knowledge
+builder.Services.AddSingleton<KnowledgeBase>();
 
 // Slow down password guessing: 5 sign-in attempts per minute from one address
 builder.Services.AddRateLimiter(options =>
@@ -36,11 +58,19 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1) }));
+    // Account creation and the live email check: more generous, still stops scripted sign-ups
+    options.AddPolicy("signup", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1) }));
+    // Chatbot: each message keeps the model busy for several seconds
+    options.AddPolicy("chat", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1) }));
     options.OnRejected = async (context, cancellationToken) =>
     {
         context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         await context.HttpContext.Response.WriteAsJsonAsync(
-            new { error = "Too many sign-in attempts. Wait a minute and try again." }, cancellationToken);
+            new { error = "Too many attempts. Wait a minute and try again." }, cancellationToken);
     };
 });
 
@@ -54,6 +84,20 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// A database that's missing a newer SQL script fails with "unknown column" / "no such table".
+// Say which script to run instead of a bare 500.
+app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
+{
+    var error = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    var message = error is MySqlException { ErrorCode: MySqlErrorCode.BadFieldError or MySqlErrorCode.NoSuchTable }
+        ? "The database is missing an update. Run Database/08_client_feedback.sql in MySQL Workbench, then try again."
+        : error is MySqlException
+            ? "The database returned an error. Open http://localhost:5250/api/health to see why (MySQL not running, or a wrong password in user secrets)."
+            : "Something went wrong on the server.";
+    await context.Response.WriteAsJsonAsync(new { error = message });
+}));
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -64,5 +108,12 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
 app.MapControllers();
+
+// Load the chatbot model in the background now, so the first customer question isn't slow
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    app.Services.GetRequiredService<OllamaClient>().WarmUpInBackground("API started");
+    _ = app.Services.GetRequiredService<KnowledgeBase>().EnsureLoadedAsync();
+});
 
 app.Run();

@@ -9,14 +9,17 @@ using MySqlConnector;
 
 namespace API.Controllers;
 
-// Endpoints the customer application form uses:
+// Endpoints the customer application form uses. These need a signed-in CUSTOMER, and
+// each one only works on that customer's own applications (404 otherwise):
 //   POST /api/applications                      start a new application (one line or a bundle)
 //   PUT  /api/applications/{id}/steps/{step}    save one step's answers
-//   POST /api/applications/{id}/submit          submit for agent review
+//   POST /api/applications/{id}/submit          submit; the rules in ApplicationRules may
+//                                               auto-approve it or send it to a specialist
 // And for the agent dashboard (these require a signed-in staff member, see AuthController):
 //   GET  /api/applications                      list applications
 //   GET  /api/applications/{id}                 one application with its answers and history
 //   PUT  /api/applications/{id}/status          agent starts review / approves / rejects / escalates
+//   GET  /api/applications/rejection-reasons    the reasons an agent can pick when rejecting
 // Demo price estimate (customer Quote step, and the agent's detail view):
 //   POST /api/applications/{id}/quote           calculate and save
 //   GET  /api/applications/{id}/quote           calculate only (staff)
@@ -58,6 +61,9 @@ public class ApplicationsController : ControllerBase
         [".jpeg"] = ("image/jpeg", new byte[] { 0xFF, 0xD8, 0xFF })
     };
 
+    // Customer endpoints: signed-in customer, own applications only
+    private const string Customer = CustomerTokenAuthHandler.SchemeName;
+
     private readonly Database _db;
 
     public ApplicationsController(Database db)
@@ -65,6 +71,9 @@ public class ApplicationsController : ControllerBase
         _db = db;
     }
 
+    private int AccountId => CustomerTokenAuthHandler.CurrentAccountId(User);
+
+    [Authorize(AuthenticationSchemes = Customer)]
     [HttpPost]
     public async Task<IActionResult> Create(CreateApplicationRequest request)
     {
@@ -111,9 +120,10 @@ public class ApplicationsController : ControllerBase
         var customerId = customerCmd.LastInsertedId;
 
         var appCmd = new MySqlCommand(
-            @"INSERT INTO applications (customer_id, state_code, status, current_step)
-              VALUES (@customer, @state, 'in_progress', 1)", conn, tx);
+            @"INSERT INTO applications (customer_id, account_id, state_code, status, current_step)
+              VALUES (@customer, @account, @state, 'in_progress', 1)", conn, tx);
         appCmd.Parameters.AddWithValue("@customer", customerId);
+        appCmd.Parameters.AddWithValue("@account", AccountId);
         appCmd.Parameters.AddWithValue("@state", stateCode);
         await appCmd.ExecuteNonQueryAsync();
         var applicationId = (int)appCmd.LastInsertedId;
@@ -134,6 +144,7 @@ public class ApplicationsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = applicationId }, new { applicationId });
     }
 
+    [Authorize(AuthenticationSchemes = Customer)]
     [HttpPut("{id:int}/steps/{step:int}")]
     public async Task<IActionResult> SaveStep(int id, int step, SaveStepRequest request)
     {
@@ -163,12 +174,36 @@ public class ApplicationsController : ControllerBase
             }
         }
 
+        // Home value: $50,000 to $50,000,000 (over $1,000,000 goes to a specialist on submit)
+        if (request.Answers.TryGetValue("dwelling_coverage", out var dwellingText) && !string.IsNullOrWhiteSpace(dwellingText))
+        {
+            if (!decimal.TryParse(dwellingText, System.Globalization.NumberStyles.Number,
+                    System.Globalization.CultureInfo.InvariantCulture, out var dwelling)
+                || dwelling < ApplicationRules.MinDwellingCoverage || dwelling > ApplicationRules.MaxDwellingCoverage)
+                return BadRequest(new { error = "Enter a home rebuild cost between $50,000 and $50,000,000." });
+        }
+
         await using var conn = await _db.OpenAsync();
 
-        var status = await GetStatusAsync(conn, id);
+        var status = await GetOwnedStatusAsync(conn, id, AccountId);
         if (status == null) return NotFound(new { error = $"Application {id} not found." });
         if (status != "in_progress")
             return Conflict(new { error = $"Application {id} is already {status} and can no longer be edited." });
+
+        // Property address and vehicle ZIPs: real-looking, and in the application's state
+        var addressProblem = AddressRules.StreetProblem(request.Answers.GetValueOrDefault("street"))
+                          ?? AddressRules.CityProblem(request.Answers.GetValueOrDefault("city"));
+        var zipsToCheck = new List<string?> { request.Answers.GetValueOrDefault("zip") };
+        if (request.Items.TryGetValue("vehicle", out var vehicleItems))
+            zipsToCheck.AddRange(vehicleItems.Select(v => v.GetValueOrDefault("garaging_zip")));
+        if (addressProblem == null && zipsToCheck.Any(z => !string.IsNullOrWhiteSpace(z)))
+        {
+            var stateCmd = new MySqlCommand("SELECT state_code FROM applications WHERE application_id = @id", conn);
+            stateCmd.Parameters.AddWithValue("@id", id);
+            var stateCode = (string)(await stateCmd.ExecuteScalarAsync())!;
+            addressProblem = zipsToCheck.Select(z => AddressRules.ZipProblem(z, stateCode)).FirstOrDefault(p => p != null);
+        }
+        if (addressProblem != null) return BadRequest(new { error = addressProblem });
 
         var answers = new Dictionary<string, string?>(request.Answers);
         Dictionary<string, string?>? customer = null;
@@ -254,23 +289,27 @@ public class ApplicationsController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(AuthenticationSchemes = Customer)]
     [HttpPost("{id:int}/submit")]
     public async Task<IActionResult> Submit(int id)
     {
         await using var conn = await _db.OpenAsync();
 
-        var status = await GetStatusAsync(conn, id);
+        var status = await GetOwnedStatusAsync(conn, id, AccountId);
         if (status == null) return NotFound(new { error = $"Application {id} not found." });
         if (status != "in_progress")
             return Conflict(new { error = $"Application {id} has already been {status}." });
 
-        var checkCmd = new MySqlCommand(
-            @"SELECT c.first_name IS NOT NULL AND c.email IS NOT NULL
-              FROM applications a JOIN customers c ON c.customer_id = a.customer_id
-              WHERE a.application_id = @id", conn);
-        checkCmd.Parameters.AddWithValue("@id", id);
-        if (Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) == 0)
+        var detail = await LoadDetailAsync(conn, id);
+        if (detail!.FirstName == null || detail.Email == null)
             return BadRequest(new { error = "Applicant details must be completed before submitting." });
+
+        // The quote decides whether every line could be priced (needed for auto-approval).
+        // If quote rates aren't set up, nothing is auto-approved.
+        QuoteResponse? quote = null;
+        try { quote = await BuildQuoteAsync(conn, detail); }
+        catch (InvalidOperationException) { }
+        var decision = ApplicationRules.Decide(detail, quote);
 
         await using var tx = await conn.BeginTransactionAsync();
 
@@ -281,11 +320,32 @@ public class ApplicationsController : ControllerBase
         submitCmd.Parameters.AddWithValue("@last", TotalSteps);
         submitCmd.Parameters.AddWithValue("@id", id);
         await submitCmd.ExecuteNonQueryAsync();
-
         await AddStatusHistoryAsync(conn, tx, id, "in_progress", "submitted", "Submitted by customer");
-        await tx.CommitAsync();
 
-        return Ok(new { applicationId = id, status = "submitted" });
+        var response = new SubmitResponse
+        {
+            ApplicationId = id, Status = decision.Status, AutoDecision = decision.AutoDecision, Reasons = decision.Reasons
+        };
+
+        if (decision.Status == "escalated")
+        {
+            var specialist = await PickSpecialistAsync(conn, tx, null);
+            var reason = "Auto-escalated: " + string.Join(" ", decision.Reasons);
+            await SetDecisionAsync(conn, tx, id, "escalated", specialist?.StaffId, "escalated");
+            await OpenEscalationAsync(conn, tx, id, Truncate(reason, MaxNoteLength), specialist?.StaffId);
+            await AddStatusHistoryAsync(conn, tx, id, "submitted", "escalated", Truncate(reason + (specialist == null
+                ? " No active specialist - an admin needs to pick it up."
+                : $" Assigned to specialist {specialist.Value.Name}."), MaxNoteLength));
+        }
+        else if (decision.Status == "approved")
+        {
+            await SetDecisionAsync(conn, tx, id, "approved", null, "approved");
+            await AddStatusHistoryAsync(conn, tx, id, "submitted", "approved",
+                Truncate("Auto-approved (demo rules): " + string.Join(" ", decision.Reasons), MaxNoteLength));
+        }
+
+        await tx.CommitAsync();
+        return Ok(response);
     }
 
     [Authorize] // signed-in staff only
@@ -294,6 +354,7 @@ public class ApplicationsController : ControllerBase
     {
         var newStatus = request.Status.Trim().ToLowerInvariant();
         var note = Clean(request.Note);
+        var rejectionCode = Clean(request.RejectionCode)?.ToLowerInvariant();
 
         if (!AgentStatuses.Contains(newStatus))
             return BadRequest(new { error = $"Status must be one of: {string.Join(", ", AgentStatuses)}." });
@@ -301,9 +362,12 @@ public class ApplicationsController : ControllerBase
             return BadRequest(new { error = $"Note must be {MaxNoteLength} characters or fewer." });
         if (note == null && (newStatus == "rejected" || newStatus == "escalated"))
             return BadRequest(new { error = $"Please add a note explaining why the application is {newStatus}." });
+        if (newStatus == "rejected" && rejectionCode == null)
+            return BadRequest(new { error = "Choose a rejection reason. The customer sees it on their My Applications page." });
 
         // Recorded as the signed-in agent (the sign-in check already confirmed they're active)
         var staffId = AuthController.CurrentStaffId(User);
+        var role = AuthController.CurrentStaffRole(User);
 
         await using var conn = await _db.OpenAsync();
 
@@ -313,17 +377,35 @@ public class ApplicationsController : ControllerBase
             return Conflict(new { error = $"Application {id} is {oldStatus} and can't be changed by an agent." });
         if (oldStatus == newStatus)
             return Conflict(new { error = $"Application {id} is already {newStatus}." });
+        // Escalated applications belong to specialists (admins can step in)
+        if (oldStatus == "escalated" && role == "employee")
+            return StatusCode(403, new { error = "Escalated applications are handled by a specialist or an admin." });
+
+        if (newStatus == "rejected")
+        {
+            var reasonCmd = new MySqlCommand("SELECT COUNT(*) FROM rejection_reasons WHERE code = @code", conn);
+            reasonCmd.Parameters.AddWithValue("@code", rejectionCode);
+            if (Convert.ToInt32(await reasonCmd.ExecuteScalarAsync()) == 0)
+                return BadRequest(new { error = $"Unknown rejection reason '{rejectionCode}'." });
+        }
 
         await using var tx = await conn.BeginTransactionAsync();
+
+        // Escalating hands it to the least busy specialist; anything else is assigned to whoever acted
+        (int StaffId, string Name)? specialist = null;
+        if (newStatus == "escalated")
+            specialist = await PickSpecialistAsync(conn, tx, staffId);
+        var assignTo = specialist?.StaffId ?? staffId;
 
         // "AND status = @old" makes sure no one else changed it since we looked
         var updateCmd = new MySqlCommand(
             @"UPDATE applications
-              SET status = @new, assigned_staff_id = @staff, rejection_reason = @reason
+              SET status = @new, assigned_staff_id = @staff, rejection_reason = @reason, rejection_code = @code
               WHERE application_id = @id AND status = @old", conn, tx);
         updateCmd.Parameters.AddWithValue("@new", newStatus);
-        updateCmd.Parameters.AddWithValue("@staff", staffId);
+        updateCmd.Parameters.AddWithValue("@staff", assignTo);
         updateCmd.Parameters.AddWithValue("@reason", newStatus == "rejected" ? note : null);
+        updateCmd.Parameters.AddWithValue("@code", newStatus == "rejected" ? rejectionCode : null);
         updateCmd.Parameters.AddWithValue("@id", id);
         updateCmd.Parameters.AddWithValue("@old", oldStatus);
         if (await updateCmd.ExecuteNonQueryAsync() == 0)
@@ -331,13 +413,10 @@ public class ApplicationsController : ControllerBase
 
         if (newStatus == "escalated")
         {
-            var escCmd = new MySqlCommand(
-                @"INSERT INTO escalations (application_id, reason, status, assigned_staff_id)
-                  VALUES (@id, @reason, 'open', @staff)", conn, tx);
-            escCmd.Parameters.AddWithValue("@id", id);
-            escCmd.Parameters.AddWithValue("@reason", note);
-            escCmd.Parameters.AddWithValue("@staff", staffId);
-            await escCmd.ExecuteNonQueryAsync();
+            await OpenEscalationAsync(conn, tx, id, note!, assignTo);
+            note = Truncate(note + (specialist == null
+                ? " (no other specialist available - kept by you)"
+                : $" - sent to specialist {specialist.Value.Name}"), MaxNoteLength);
         }
         else if (newStatus is "approved" or "rejected")
         {
@@ -358,7 +437,28 @@ public class ApplicationsController : ControllerBase
         await AddStatusHistoryAsync(conn, tx, id, oldStatus, newStatus, note ?? defaultNote, staffId);
         await tx.CommitAsync();
 
-        return Ok(new { applicationId = id, status = newStatus });
+        return Ok(new { applicationId = id, status = newStatus, assignedTo = specialist?.Name });
+    }
+
+    [Authorize] // signed-in staff only
+    [HttpGet("rejection-reasons")]
+    public async Task<IActionResult> GetRejectionReasons()
+    {
+        await using var conn = await _db.OpenAsync();
+        var cmd = new MySqlCommand(
+            "SELECT code, agent_label, customer_message FROM rejection_reasons ORDER BY sort_order, code", conn);
+        var reasons = new List<RejectionReason>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            reasons.Add(new RejectionReason
+            {
+                Code = reader.GetString("code"),
+                AgentLabel = reader.GetString("agent_label"),
+                CustomerMessage = reader.GetString("customer_message")
+            });
+        }
+        return Ok(reasons);
     }
 
     [Authorize] // signed-in staff only
@@ -412,10 +512,13 @@ public class ApplicationsController : ControllerBase
 
     // Demo estimate for the customer's Quote step: calculated and saved to the quotes
     // table (replacing any earlier estimate), so agents can see what the customer was shown
+    [Authorize(AuthenticationSchemes = Customer)]
     [HttpPost("{id:int}/quote")]
     public async Task<IActionResult> CreateQuote(int id)
     {
         await using var conn = await _db.OpenAsync();
+        if (await GetOwnedStatusAsync(conn, id, AccountId) == null)
+            return NotFound(new { error = $"Application {id} not found." });
         var detail = await LoadDetailAsync(conn, id);
         if (detail == null) return NotFound(new { error = $"Application {id} not found." });
         QuoteResponse quote;
@@ -458,6 +561,7 @@ public class ApplicationsController : ControllerBase
     // ---------------------------------------------------------------
 
     // Upload (or replace) the declarations page of the policy the customer is switching from
+    [Authorize(AuthenticationSchemes = Customer)]
     [HttpPost("{id:int}/documents/current-policy")]
     [RequestSizeLimit(MaxDocumentBytes + 64 * 1024)] // file plus multipart overhead
     public async Task<IActionResult> UploadCurrentPolicy(int id, IFormFile? file)
@@ -485,7 +589,7 @@ public class ApplicationsController : ControllerBase
         if (fileName.Length > 255) fileName = fileName[^255..];
 
         await using var conn = await _db.OpenAsync();
-        var status = await GetStatusAsync(conn, id);
+        var status = await GetOwnedStatusAsync(conn, id, AccountId);
         if (status == null) return NotFound(new { error = $"Application {id} not found." });
         if (status != "in_progress")
             return Conflict(new { error = $"Application {id} is already {status} and can no longer be edited." });
@@ -514,11 +618,12 @@ public class ApplicationsController : ControllerBase
         return Ok(new { fileName, sizeBytes = content.Length });
     }
 
+    [Authorize(AuthenticationSchemes = Customer)]
     [HttpDelete("{id:int}/documents/current-policy")]
     public async Task<IActionResult> DeleteCurrentPolicy(int id)
     {
         await using var conn = await _db.OpenAsync();
-        var status = await GetStatusAsync(conn, id);
+        var status = await GetOwnedStatusAsync(conn, id, AccountId);
         if (status == null) return NotFound(new { error = $"Application {id} not found." });
         if (status != "in_progress")
             return Conflict(new { error = $"Application {id} is already {status} and can no longer be edited." });
@@ -567,6 +672,8 @@ public class ApplicationsController : ControllerBase
             detail.Phone = reader.IsDBNull(reader.GetOrdinal("phone")) ? null : reader.GetString("phone");
             detail.RejectionReason = reader.IsDBNull(reader.GetOrdinal("rejection_reason")) ? null : reader.GetString("rejection_reason");
         }
+
+        if (detail.Zip != null) detail.ZipRisk = await LoadZipRiskAsync(conn, detail.Zip);
 
         var ansCmd = new MySqlCommand(
             "SELECT field_key, field_value FROM application_answers WHERE application_id = @id ORDER BY step_number, answer_id",
@@ -701,7 +808,7 @@ public class ApplicationsController : ControllerBase
             quote.TotalHigh = lines.Sum(l => l.High);
         }
 
-        quote.Notes.Add("Prices vary a lot by state. This estimate uses national averages and isn't adjusted for your state yet.");
+        quote.Notes.Add("This estimate uses national average prices adjusted for your state's average premiums (NAIC and FEMA data). Your own home, vehicle, and history can still move the price a lot.");
         if (detail.IsBundle)
         {
             quote.Notes.Add("Any multi-policy (bundle) discount isn't included in this estimate.");
@@ -718,7 +825,13 @@ public class ApplicationsController : ControllerBase
     // line_codes / line_names list every line on the application (2+ for a bundle)
     private const string SummarySelect =
         @"SELECT a.application_id, a.state_code, a.status, a.current_step, a.rejection_reason,
+                 a.rejection_code, a.auto_decision, a.assigned_staff_id,
                  a.created_at, a.submitted_at, c.first_name, c.last_name, c.email, c.phone,
+                 COALESCE((SELECT ans.field_value FROM application_answers ans
+                           WHERE ans.application_id = a.application_id AND ans.field_key = 'zip'),
+                          (SELECT i.field_value FROM application_item_answers i
+                           WHERE i.application_id = a.application_id AND i.item_type = 'vehicle'
+                             AND i.item_number = 1 AND i.field_key = 'garaging_zip')) AS zip,
                  CONCAT(s.first_name, ' ', s.last_name) AS assigned_to,
                  (SELECT GROUP_CONCAT(l.line_code ORDER BY l.line_id SEPARATOR ',')
                   FROM application_lines al JOIN insurance_lines l ON l.line_id = al.line_id
@@ -751,7 +864,104 @@ public class ApplicationsController : ControllerBase
         summary.CustomerName = first == null && last == null ? null : $"{first} {last}".Trim();
         summary.AssignedTo = reader.IsDBNull(reader.GetOrdinal("assigned_to")) ? null : reader.GetString("assigned_to");
         summary.LatestNote = reader.IsDBNull(reader.GetOrdinal("latest_note")) ? null : reader.GetString("latest_note");
+        summary.AssignedStaffId = reader.IsDBNull(reader.GetOrdinal("assigned_staff_id")) ? null : reader.GetInt32("assigned_staff_id");
+        summary.RejectionCode = reader.IsDBNull(reader.GetOrdinal("rejection_code")) ? null : reader.GetString("rejection_code");
+        summary.AutoDecision = reader.IsDBNull(reader.GetOrdinal("auto_decision")) ? null : reader.GetString("auto_decision");
+        summary.Zip = reader.IsDBNull(reader.GetOrdinal("zip")) ? null : reader.GetString("zip");
     }
+
+    // Hazard ratings for a ZIP code, or null if it isn't in zip_risk_factors. Also used by DashboardController.
+    internal static async Task<ZipRisk?> LoadZipRiskAsync(MySqlConnection conn, string zip)
+    {
+        var cmd = new MySqlCommand(
+            @"SELECT zip_code, state_code, place_name, flood_risk, wind_risk, hail_risk, wildfire_risk, is_mock, source
+              FROM zip_risk_factors WHERE zip_code = @zip", conn);
+        cmd.Parameters.AddWithValue("@zip", zip);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        return await reader.ReadAsync() ? ReadZipRisk(reader) : null;
+    }
+
+    internal static ZipRisk ReadZipRisk(MySqlDataReader reader) => new()
+    {
+        ZipCode = reader.GetString("zip_code"),
+        StateCode = reader.GetString("state_code"),
+        PlaceName = reader.GetString("place_name"),
+        Flood = reader.GetInt32("flood_risk"),
+        Wind = reader.GetInt32("wind_risk"),
+        Hail = reader.GetInt32("hail_risk"),
+        Wildfire = reader.GetInt32("wildfire_risk"),
+        IsMock = reader.GetBoolean("is_mock"),
+        Source = reader.IsDBNull(reader.GetOrdinal("source")) ? null : reader.GetString("source")
+    };
+
+    // Status of an application owned by this customer account; NULL if it doesn't exist or isn't theirs
+    private static async Task<string?> GetOwnedStatusAsync(MySqlConnection conn, int id, int accountId)
+    {
+        var cmd = new MySqlCommand(
+            "SELECT status FROM applications WHERE application_id = @id AND account_id = @account", conn);
+        cmd.Parameters.AddWithValue("@id", id);
+        cmd.Parameters.AddWithValue("@account", accountId);
+        return (string?)await cmd.ExecuteScalarAsync();
+    }
+
+    // The active specialist with the fewest open escalations (ties: lowest id), skipping anyone an
+    // admin took out of automatic assignment on the Team page (staff_users.auto_assign). NULL if none.
+    private static async Task<(int StaffId, string Name)?> PickSpecialistAsync(
+        MySqlConnection conn, MySqlTransaction tx, int? excludeStaffId)
+    {
+        const string query =
+            @"SELECT s.staff_id, CONCAT(s.first_name, ' ', s.last_name) AS name
+              FROM staff_users s
+              WHERE s.role = 'specialist' AND s.is_active = TRUE AND s.staff_id <> COALESCE(@exclude, -1) {0}
+              ORDER BY (SELECT COUNT(*) FROM applications a
+                        WHERE a.assigned_staff_id = s.staff_id AND a.status = 'escalated'), s.staff_id
+              LIMIT 1";
+        try
+        {
+            return await PickAsync(string.Format(query, "AND s.auto_assign = TRUE"));
+        }
+        catch (MySqlException ex) when (ex.ErrorCode == MySqlErrorCode.BadFieldError)
+        {
+            return await PickAsync(string.Format(query, "")); // 10_team_management.sql not run yet
+        }
+
+        async Task<(int, string)?> PickAsync(string sql)
+        {
+            var cmd = new MySqlCommand(sql, conn, tx);
+            cmd.Parameters.AddWithValue("@exclude", excludeStaffId);
+            await using var reader = await cmd.ExecuteReaderAsync();
+            if (!await reader.ReadAsync()) return null;
+            return (reader.GetInt32("staff_id"), reader.GetString("name"));
+        }
+    }
+
+    // Status change made by a rule at submit time (no agent)
+    private static async Task SetDecisionAsync(MySqlConnection conn, MySqlTransaction tx, int id, string status,
+        int? assignedStaffId, string autoDecision)
+    {
+        var cmd = new MySqlCommand(
+            @"UPDATE applications SET status = @status, assigned_staff_id = @staff, auto_decision = @auto
+              WHERE application_id = @id", conn, tx);
+        cmd.Parameters.AddWithValue("@status", status);
+        cmd.Parameters.AddWithValue("@staff", assignedStaffId);
+        cmd.Parameters.AddWithValue("@auto", autoDecision);
+        cmd.Parameters.AddWithValue("@id", id);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task OpenEscalationAsync(MySqlConnection conn, MySqlTransaction tx, int id, string reason, int? staffId)
+    {
+        var cmd = new MySqlCommand(
+            @"INSERT INTO escalations (application_id, reason, status, assigned_staff_id)
+              VALUES (@id, @reason, 'open', @staff)", conn, tx);
+        cmd.Parameters.AddWithValue("@id", id);
+        cmd.Parameters.AddWithValue("@reason", reason);
+        cmd.Parameters.AddWithValue("@staff", staffId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static string Truncate(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
+
 
     private static async Task<string?> GetStatusAsync(MySqlConnection conn, int id)
     {
@@ -760,7 +970,7 @@ public class ApplicationsController : ControllerBase
         return (string?)await cmd.ExecuteScalarAsync();
     }
 
-    private static async Task AddStatusHistoryAsync(
+    internal static async Task AddStatusHistoryAsync(
         MySqlConnection conn, MySqlTransaction tx, int applicationId, string? oldStatus, string newStatus, string note,
         int? staffId = null)
     {

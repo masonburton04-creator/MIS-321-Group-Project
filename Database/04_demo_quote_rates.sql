@@ -9,6 +9,11 @@
 -- (status DEMO_ESTIMATE in the research doc, section 10). Replace this
 -- table with the client's approved rating rules or carrier quote API later.
 --
+-- STATE ADJUSTMENT (demo-2026-11): each line's price is multiplied by a
+-- state factor = the state's average premium / the national average, both
+-- from the SAME published table and year, so the ratio is like-for-like.
+-- A state with no factor here uses 1.00 (the national average).
+--
 -- To change a number: edit factor_value here (or in Workbench), re-run.
 -- The API reads the table on every quote, so no restart is needed.
 -- =====================================================================
@@ -30,7 +35,7 @@ CREATE TABLE demo_quote_factors (
 );
 
 -- Only one version is active at a time; the API uses this one
-SET @v = 'demo-2026-10';
+SET @v = 'demo-2026-11';  -- -10 was national averages only; -11 adds the state factors
 
 INSERT INTO demo_quote_factors (rule_version, line_code, factor_key, factor_value, description, source) VALUES
 
@@ -72,7 +77,37 @@ INSERT INTO demo_quote_factors (rule_version, line_code, factor_key, factor_valu
 -- Placeholders: raise the HIGH end only, since we can't know the real effect
 (@v, 'AUTO', 'incident_high_mult',  1.50, 'Recent accidents/claims/violations: high end x this', NULL),
 (@v, 'AUTO', 'new_driver_years',    3,    'A driver licensed fewer years than this counts as a new driver', NULL),
-(@v, 'AUTO', 'new_driver_high_mult', 1.50, 'Any new driver on the policy: high end x this', NULL);
+(@v, 'AUTO', 'new_driver_high_mult', 1.50, 'Any new driver on the policy: high end x this', NULL),
+
+-- ---- State factors: state average / national average ------------------
+-- Homeowners: NAIC 2023 average HO-3 homeowners premium (via Insurance Information Institute).
+--   US $1,737 | AL $1,906 | TX $2,864 (TX data from the Texas Dept. of Insurance) | NY $1,801
+(@v, 'HOME', 'state_mult_AL', 1.10, 'Alabama: $1,906 / US $1,737 average HO-3 premium, 2023', 'NAIC 2023 HO-3 average premium by state, via III Facts + Statistics: Homeowners and renters insurance'),
+(@v, 'HOME', 'state_mult_TX', 1.65, 'Texas: $2,864 / US $1,737 average HO-3 premium, 2023', 'NAIC 2023 HO-3 average premium by state (TX from Texas Dept. of Insurance), via III'),
+(@v, 'HOME', 'state_mult_NY', 1.04, 'New York: $1,801 / US $1,737 average HO-3 premium, 2023', 'NAIC 2023 HO-3 average premium by state, via III Facts + Statistics: Homeowners and renters insurance'),
+
+-- Flood: average NFIP premium, policies written or renewed Aug 31 2025 - Aug 31 2026
+--   (OpenFEMA NFIP Policies data, FEMA snapshot Aug 3 2026, compiled by FludZone).
+--   US $955 | AL $917 | TX $958 | NY $1,194
+(@v, 'FLOOD', 'state_mult_AL', 0.96, 'Alabama: $917 / US $955 average NFIP premium, 12 months to Aug 2026', 'OpenFEMA NFIP policies (FEMA snapshot Aug 3, 2026), via fludzone.com/guides/nfip-policies-data'),
+(@v, 'FLOOD', 'state_mult_TX', 1.00, 'Texas: $958 / US $955 average NFIP premium, 12 months to Aug 2026', 'OpenFEMA NFIP policies (FEMA snapshot Aug 3, 2026), via fludzone.com/guides/nfip-policies-data'),
+(@v, 'FLOOD', 'state_mult_NY', 1.25, 'New York: $1,194 / US $955 average NFIP premium, 12 months to Aug 2026', 'OpenFEMA NFIP policies (FEMA snapshot Aug 3, 2026), via fludzone.com/guides/nfip-policies-data'),
+
+-- Jewelry: priced as a % of item value; no state-level data was found, so every state is 1.00
+(@v, 'JEWELRY', 'state_mult_AL', 1.00, 'Alabama: no state jewelry premium data found; national rate used', NULL),
+(@v, 'JEWELRY', 'state_mult_TX', 1.00, 'Texas: no state jewelry premium data found; national rate used', NULL),
+(@v, 'JEWELRY', 'state_mult_NY', 1.00, 'New York: no state jewelry premium data found; national rate used', NULL),
+
+-- Auto: NAIC 2022/2023 Auto Insurance Database Report (adopted Dec 2025), 2023 data.
+--   Liability only = Table 1C liability average premium: US $736.65 | AL $575.51 | TX $797.86 | NY $1,115.97
+--   Full coverage  = Table 5 combined average premium (liability + collision + comprehensive):
+--                    US $1,438.60 | AL $1,268.71 | TX $1,726.91 | NY $1,895.99
+(@v, 'AUTO', 'state_mult_liability_AL', 0.78, 'Alabama: $575.51 / US $736.65 liability average premium, 2023', 'NAIC 2022/2023 Auto Insurance Database Report, Table 1C (2023)'),
+(@v, 'AUTO', 'state_mult_liability_TX', 1.08, 'Texas: $797.86 / US $736.65 liability average premium, 2023', 'NAIC 2022/2023 Auto Insurance Database Report, Table 1C (2023)'),
+(@v, 'AUTO', 'state_mult_liability_NY', 1.51, 'New York: $1,115.97 / US $736.65 liability average premium, 2023', 'NAIC 2022/2023 Auto Insurance Database Report, Table 1C (2023)'),
+(@v, 'AUTO', 'state_mult_full_AL', 0.88, 'Alabama: $1,268.71 / US $1,438.60 combined average premium, 2023', 'NAIC 2022/2023 Auto Insurance Database Report, Table 5 (2023)'),
+(@v, 'AUTO', 'state_mult_full_TX', 1.20, 'Texas: $1,726.91 / US $1,438.60 combined average premium, 2023', 'NAIC 2022/2023 Auto Insurance Database Report, Table 5 (2023)'),
+(@v, 'AUTO', 'state_mult_full_NY', 1.32, 'New York: $1,895.99 / US $1,438.60 combined average premium, 2023', 'NAIC 2022/2023 Auto Insurance Database Report, Table 5 (2023)');
 
 SELECT line_code, factor_key, factor_value, COALESCE(source, '(placeholder)') AS source
 FROM demo_quote_factors ORDER BY line_code, factor_id;

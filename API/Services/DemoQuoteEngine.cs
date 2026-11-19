@@ -7,7 +7,8 @@ namespace API.Services;
 // using the numbers in the demo_quote_factors table (Database/04_demo_quote_rates.sql).
 //
 // This is a DEMO estimate, not a real quote: the factors are national averages plus
-// placeholders. When the client provides approved rating rules or a carrier quote API,
+// placeholders, multiplied by a state factor (the state's average premium / the national
+// average, from NAIC and FEMA data; see the state_mult_* rows in 04_demo_quote_rates.sql). When the client provides approved rating rules or a carrier quote API,
 // replace this class; the controller and front end only depend on QuoteResponse.
 public class DemoQuoteEngine
 {
@@ -39,12 +40,22 @@ public class DemoQuoteEngine
             quote.Missing.Add(new MissingAnswer { Step = 1, Field = "dwelling_coverage", Label = "Estimated cost to rebuild your home" });
         if (quote.Missing.Count > 0) return Incomplete(quote);
 
-        var average = dwelling!.Value / 1000 * Factor("HOME", "annual_per_1000_dwelling");
+        // Client rule: homes over $1M go to a specialist, who prices them individually
+        if (dwelling!.Value > ApplicationRules.SpecialistDwellingThreshold)
+        {
+            quote.Status = "REFERRED";
+            quote.Basis.Add($"{Money(dwelling.Value)} dwelling (rebuild) coverage");
+            quote.Notes.Add($"Homes over {Money(ApplicationRules.SpecialistDwellingThreshold)} are priced individually by a specialist.");
+            return quote;
+        }
+
+        quote.Basis.Add($"{Money(dwelling.Value)} dwelling (rebuild) coverage");
+        var average = dwelling.Value / 1000 * Factor("HOME", "annual_per_1000_dwelling")
+                      * StateMultiplier(app, quote, "HOME", "state_mult", "homeowners");
         quote.Low = RoundDown(average * Factor("HOME", "range_low_mult"));
         quote.High = RoundUp(average * Factor("HOME", "range_high_mult"));
         quote.Status = "DEMO_ESTIMATE";
-        quote.Basis.Add($"{Money(dwelling.Value)} dwelling (rebuild) coverage");
-        quote.Basis.Add("National average price per $1,000 of coverage");
+
         quote.Notes.Add("Your deductible, roof, claims history, and location can move the price a lot.");
         return quote;
     }
@@ -82,7 +93,8 @@ public class DemoQuoteEngine
 
         var lowMult = zone == "X" ? Factor("FLOOD", "zone_x_low_mult") : Factor("FLOOD", "zone_a_low_mult");
         var highMult = zone == "X" ? Factor("FLOOD", "zone_x_high_mult") : Factor("FLOOD", "zone_a_high_mult");
-        var average = Factor("FLOOD", "annual_avg_policy");
+        var average = Factor("FLOOD", "annual_avg_policy")
+                      * StateMultiplier(app, quote, "FLOOD", "state_mult", "NFIP flood");
         quote.Low = RoundDown(average * lowMult);
         quote.High = RoundUp(average * highMult);
         quote.Status = "DEMO_ESTIMATE";
@@ -92,7 +104,6 @@ public class DemoQuoteEngine
             "A" => "Flood zone A/AE (high risk)",
             _ => "Flood zone not known yet, so the range is wide"
         });
-        quote.Basis.Add("National average flood policy price");
         quote.Notes.Add("Real flood pricing also depends on elevation, the building, and distance to water.");
         return quote;
     }
@@ -110,8 +121,9 @@ public class DemoQuoteEngine
         }
 
         var total = values.Sum(v => v!.Value);
-        quote.Low = RoundDown(total * Factor("JEWELRY", "rate_low_pct") / 100);
-        quote.High = RoundUp(total * Factor("JEWELRY", "rate_high_pct") / 100);
+        var stateMult = StateMultiplier(app, quote, "JEWELRY", "state_mult", "jewelry");
+        quote.Low = RoundDown(total * Factor("JEWELRY", "rate_low_pct") / 100 * stateMult);
+        quote.High = RoundUp(total * Factor("JEWELRY", "rate_high_pct") / 100 * stateMult);
         quote.Status = "DEMO_ESTIMATE";
         quote.Basis.Add($"{items.Count} item{(items.Count == 1 ? "" : "s")} worth {Money(total)} in total");
         quote.Basis.Add($"Typical yearly cost of {Factor("JEWELRY", "rate_low_pct"):0.#}%–{Factor("JEWELRY", "rate_high_pct"):0.#}% of value");
@@ -150,8 +162,10 @@ public class DemoQuoteEngine
             return quote;
         }
 
-        var low = level == "full" ? Factor("AUTO", "full_low") : Factor("AUTO", "liability_low");
-        var high = level == "full" ? Factor("AUTO", "full_high") : Factor("AUTO", "liability_high");
+        var stateMult = StateMultiplier(app, quote, "AUTO", "state_mult_" + level,
+            level == "full" ? "full-coverage auto" : "liability-only auto");
+        var low = (level == "full" ? Factor("AUTO", "full_low") : Factor("AUTO", "liability_low")) * stateMult;
+        var high = (level == "full" ? Factor("AUTO", "full_high") : Factor("AUTO", "liability_high")) * stateMult;
         var highMult = Factor("AUTO", "range_high_mult");
 
         if (incidents == "yes")
@@ -189,6 +203,31 @@ public class DemoQuoteEngine
             return value;
         throw new InvalidOperationException(
             $"Demo quote factor {line}.{key} is missing. Re-run Database/04_demo_quote_rates.sql.");
+    }
+
+    private static readonly Dictionary<string, string> StateNames = new()
+    {
+        ["AL"] = "Alabama", ["TX"] = "Texas", ["NY"] = "New York"
+    };
+
+    // The state's average premium / the national average for this line (04_demo_quote_rates.sql,
+    // keys like state_mult_TX). States without a factor use 1.00. Adds a line to the "based on" list.
+    private decimal StateMultiplier(ApplicationDetail app, LineQuote quote, string line, string keyPrefix, string what)
+    {
+        var state = (app.StateCode ?? "").Trim().ToUpperInvariant();
+        var name = StateNames.GetValueOrDefault(state, state);
+        if (state.Length != 2 || !_factors.TryGetValue(line, out var lineFactors)
+            || !lineFactors.TryGetValue(keyPrefix + "_" + state, out var multiplier))
+        {
+            quote.Basis.Add("National average prices (no state adjustment" + (name.Length > 0 ? " for " + name : "") + ")");
+            return 1m;
+        }
+
+        var percent = (int)Math.Round((multiplier - 1m) * 100);
+        quote.Basis.Add(percent == 0
+            ? $"National average prices; {what} prices in {name} are about the same"
+            : $"Adjusted for {name}: {what} prices there average about {Math.Abs(percent)}% {(percent > 0 ? "above" : "below")} the national average");
+        return multiplier;
     }
 
     private static LineQuote Incomplete(LineQuote quote)

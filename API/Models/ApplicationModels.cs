@@ -25,6 +25,7 @@ public class UpdateStatusRequest
 {
     public string Status { get; set; } = "";   // 'under_review', 'approved', 'rejected', 'escalated'
     public string? Note { get; set; }          // required for 'rejected' and 'escalated'
+    public string? RejectionCode { get; set; } // required for 'rejected' (rejection_reasons.code)
 }
 
 // ---- Response bodies (what the API sends back) ----
@@ -40,7 +41,11 @@ public class ApplicationSummary
     public int? CurrentStep { get; set; }
     public string? CustomerName { get; set; }
     public string? AssignedTo { get; set; }    // agent's name, if one has picked it up
+    public int? AssignedStaffId { get; set; }
     public string? LatestNote { get; set; }    // note from the most recent status change
+    public string? RejectionCode { get; set; } // why it was rejected (rejection_reasons.code)
+    public string? AutoDecision { get; set; }  // 'approved' / 'escalated' when a rule decided it
+    public string? Zip { get; set; }           // property ZIP, or the first vehicle's ZIP
     public DateTime CreatedAt { get; set; }
     public DateTime? SubmittedAt { get; set; }
 }
@@ -56,6 +61,29 @@ public class ApplicationDetail : ApplicationSummary
     public Dictionary<string, List<Dictionary<string, string?>>> Items { get; set; } = new();
     public List<StatusHistoryEntry> History { get; set; } = new();
     public List<DocumentInfo> Documents { get; set; } = new();
+    public ZipRisk? ZipRisk { get; set; }       // natural-hazard ratings for Zip, if known
+}
+
+// Natural-hazard ratings for one ZIP code, 1 = very low ... 5 = very high (zip_risk_factors)
+public class ZipRisk
+{
+    public string ZipCode { get; set; } = "";
+    public string StateCode { get; set; } = "";
+    public string PlaceName { get; set; } = "";
+    public int Flood { get; set; }
+    public int Wind { get; set; }
+    public int Hail { get; set; }
+    public int Wildfire { get; set; }
+    public int Overall => Math.Max(Math.Max(Flood, Wind), Math.Max(Hail, Wildfire));
+    public bool IsMock { get; set; }
+    public string? Source { get; set; }
+}
+
+public class RejectionReason
+{
+    public string Code { get; set; } = "";
+    public string AgentLabel { get; set; } = "";
+    public string CustomerMessage { get; set; } = "";
 }
 
 // An uploaded file (not its contents; download it from GET /api/applications/{id}/documents/{documentId})
@@ -87,7 +115,7 @@ public class StaffMember
     public string Role { get; set; } = "";
 }
 
-// ---- Dashboard sign-in (POST /api/auth/login) ----
+// ---- Sign-in (POST /api/auth/login, one form for staff and customers) ----
 
 public class LoginRequest
 {
@@ -97,9 +125,58 @@ public class LoginRequest
 
 public class LoginResponse
 {
-    public string Token { get; set; } = "";      // send as "Authorization: Bearer <token>"
+    public string AccountType { get; set; } = "";   // 'staff' -> dashboard, 'customer' -> website
+    public string Token { get; set; } = "";         // send as "Authorization: Bearer <token>"
     public DateTime ExpiresAt { get; set; }
-    public StaffMember Staff { get; set; } = new();
+    public StaffMember? Staff { get; set; }
+    public CustomerAccount? Customer { get; set; }
+}
+
+public class CustomerAccount
+{
+    public int AccountId { get; set; }
+    public string FirstName { get; set; } = "";
+    public string LastName { get; set; } = "";
+    public string Email { get; set; } = "";
+}
+
+public class RegisterRequest
+{
+    public string FirstName { get; set; } = "";
+    public string LastName { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string Password { get; set; } = "";
+}
+
+public class CheckEmailRequest
+{
+    public string Email { get; set; } = "";
+}
+
+// One application on the customer's "My Applications" page
+public class CustomerApplication
+{
+    public int ApplicationId { get; set; }
+    public List<string> LineCodes { get; set; } = new();
+    public string StateCode { get; set; } = "";
+    public string Status { get; set; } = "";
+    public int? CurrentStep { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? SubmittedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public string? RejectionCode { get; set; }
+    public string? RejectionTitle { get; set; }     // e.g. "Property is in a high-risk flood zone"
+    public string? RejectionMessage { get; set; }   // plain-language explanation for the customer
+    public string? AutoDecision { get; set; }
+}
+
+// What happened when the customer submitted (POST /api/applications/{id}/submit)
+public class SubmitResponse
+{
+    public int ApplicationId { get; set; }
+    public string Status { get; set; } = "";        // submitted | approved | escalated
+    public string? AutoDecision { get; set; }
+    public List<string> Reasons { get; set; } = new();
 }
 
 // ---- Agent dashboard (GET /api/dashboard) ----
@@ -119,6 +196,28 @@ public class DashboardResponse
 
     public PricingSummary Pricing { get; set; } = new();
     public AgentUsage Agents { get; set; } = new();
+    public List<RejectionCount> Rejections { get; set; } = new();
+    public List<ZipActivity> Zips { get; set; } = new();
+    public ChatUsage Chat { get; set; } = new();
+}
+
+public class RejectionCount
+{
+    public string Code { get; set; } = "";         // 'none' = rejected before reasons existed
+    public string Label { get; set; } = "";
+    public int Count { get; set; }
+}
+
+// Applications per ZIP code, with that ZIP's hazard ratings when known
+public class ZipActivity
+{
+    public string Zip { get; set; } = "";
+    public string? StateCode { get; set; }
+    public int Applications { get; set; }
+    public int Approved { get; set; }
+    public int Rejected { get; set; }
+    public int Escalated { get; set; }
+    public ZipRisk? Risk { get; set; }
 }
 
 // Demo estimate ranges for applications that reached the Quote step, recalculated
@@ -149,6 +248,10 @@ public class AgentUsage
     public int Submitted { get; set; }
     public int HandledByAgent { get; set; }        // an agent changed its status at least once
     public int Escalated { get; set; }             // was escalated at any point
+    public int AutoApproved { get; set; }          // approved by the auto-approve rules
+    public int AutoEscalated { get; set; }         // sent to a specialist by a rule (e.g. home over $1M)
+    public int OpenEscalations { get; set; }       // status 'escalated' right now
+    public int OpenEscalationsForMe { get; set; }  // ...assigned to the signed-in staff member
     public List<AgentActivity> Staff { get; set; } = new();
 }
 
@@ -179,7 +282,7 @@ public class StepFriction
 
 // ---- Demo quote (GET/POST /api/applications/{id}/quote) ----
 // Status values follow the research doc, section 10:
-//   DEMO_ESTIMATE  ballpark range from national averages, clearly not a real quote
+//   DEMO_ESTIMATE  ballpark range from national averages adjusted by state, clearly not a real quote
 //   INCOMPLETE     answers the estimate needs are missing (see Missing)
 //   REFERRED       a specialist has to price it; no number is shown
 

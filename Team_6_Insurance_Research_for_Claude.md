@@ -329,6 +329,23 @@ The sprint limits the prototype to AL, TX and NY. These rules feed the explorer'
 [S6] https://www.dfs.ny.gov/faqs/consumer-auto/what-auto-coverages-do-i-need
 [S7] https://www.dfs.ny.gov/help_for_homeowners/insurance/basic_coverage/awindded/
 
+## 15b. State price multipliers for the demo estimate (researched Nov 2026)
+The demo estimate (`Database/04_demo_quote_rates.sql`, rule version `demo-2026-11`) multiplies each line's national-average price by a state multiplier = state average premium / national average, both from the SAME table and year so the ratio is like-for-like. Still a DEMO ESTIMATE: these are statewide averages, not filed carrier rates (section 10's rating control still applies).
+
+| Line | Measure (source) | US | Alabama | Texas | New York |
+|---|---|---|---|---|---|
+| Homeowners | 2023 average HO-3 premium [S8] | $1,737 | $1,906 → **1.10** | $2,864 → **1.65** | $1,801 → **1.04** |
+| Auto, liability only | 2023 liability average premium, Table 1C [S9] | $736.65 | $575.51 → **0.78** | $797.86 → **1.08** | $1,115.97 → **1.51** |
+| Auto, full coverage | 2023 combined average premium (liability + collision + comprehensive), Table 5 [S9] | $1,438.60 | $1,268.71 → **0.88** | $1,726.91 → **1.20** | $1,895.99 → **1.32** |
+| Flood | Average NFIP premium, policies written/renewed Aug 31 2025 - Aug 31 2026 [S10] | $955 | $917 → **0.96** | $958 → **1.00** | $1,194 → **1.25** |
+| Jewelry | No state-level premium data found | - | **1.00** | **1.00** | **1.00** |
+
+Notes: [S8] includes state funds, residual markets and some wind pools; Texas figures come from the Texas Department of Insurance. In the [S9] PDF the text layer misaligns rows after Hawaii (which has no 2023 value); values were re-matched in state order and confirmed against figures the NAIC/III state in text (2023 average expenditure: countrywide $1,281.92, Florida $1,865, Louisiana $1,754, New York $1,753). [S10] is a secondary compilation of OpenFEMA data (risk-rated premium only, excludes the Federal Policy Fee, HFIAA surcharge and Reserve Fund Assessment; not a certified policies-in-force count). Verify against OpenFEMA directly before client use. Bankrate's state tables (the source of the national homeowners figure) could not be read programmatically, so NAIC was used for every state ratio.
+
+[S8] NAIC, "Average Premiums For Homeowners And Renters Insurance By State, 2023," via Insurance Information Institute: https://www.iii.org/fact-statistic/facts-statistics-homeowners-and-renters-insurance
+[S9] NAIC, 2022/2023 Auto Insurance Database Report (adopted Dec 2025): https://content.naic.org/sites/default/files/publication-aut-pb-auto-insurance-database.pdf
+[S10] OpenFEMA NFIP policies (FEMA data snapshot Aug 3, 2026), compiled by FludZone: https://www.fludzone.com/guides/nfip-policies-data
+
 ## 16. Sources and verification links
 References were checked for this research on October 12, 2026. The public references below are general industry/regulator guidance. Exact carrier forms, filed rating factors, legal disclosures and availability require partner approval. The attached SOW remains the only source for Team 6 project acceptance criteria.
 [SOW] Team 6, AI Insurance Quote & Application Assistant, Statement of Work (uploaded; 3 pages).

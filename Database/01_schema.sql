@@ -32,6 +32,10 @@ DROP TABLE IF EXISTS line_state_availability;
 DROP TABLE IF EXISTS insurance_lines;
 DROP TABLE IF EXISTS states;
 DROP TABLE IF EXISTS customers;
+DROP TABLE IF EXISTS customer_sessions;
+DROP TABLE IF EXISTS customer_accounts;
+DROP TABLE IF EXISTS rejection_reasons;
+DROP TABLE IF EXISTS zip_risk_factors;
 DROP TABLE IF EXISTS staff_sessions;
 DROP TABLE IF EXISTS staff_users;
 SET FOREIGN_KEY_CHECKS = 1;
@@ -105,7 +109,7 @@ CREATE TABLE staff_users (
   first_name    VARCHAR(100) NOT NULL,
   last_name     VARCHAR(100) NOT NULL,
   password_hash VARCHAR(255) NULL,                 -- never store plain-text passwords
-  role          ENUM('employee','admin') NOT NULL DEFAULT 'employee',
+  role          ENUM('employee','specialist','admin') NOT NULL DEFAULT 'employee',  -- specialists get escalations
   is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -118,6 +122,27 @@ CREATE TABLE staff_sessions (
   created_at  DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at  DATETIME  NOT NULL,
   FOREIGN KEY (staff_id) REFERENCES staff_users(staff_id) ON DELETE CASCADE
+);
+
+-- Customer sign-in accounts. Starting or submitting an application needs one;
+-- browsing coverage doesn't. (08_client_feedback.sql adds this to older databases.)
+CREATE TABLE customer_accounts (
+  account_id    INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  email         VARCHAR(255) NOT NULL UNIQUE,
+  first_name    VARCHAR(100) NOT NULL,
+  last_name     VARCHAR(100) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,           -- salted PBKDF2, never plain text
+  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_login_at DATETIME     NULL
+);
+
+-- Signed-in customer sessions. Only a SHA-256 hash of each token is stored.
+CREATE TABLE customer_sessions (
+  token_hash  CHAR(64)  NOT NULL PRIMARY KEY,
+  account_id  INT       NOT NULL,
+  created_at  DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at  DATETIME  NOT NULL,
+  FOREIGN KEY (account_id) REFERENCES customer_accounts(account_id) ON DELETE CASCADE
 );
 
 -- Applicants / website visitors who start an application.
@@ -141,17 +166,21 @@ CREATE TABLE customers (
 CREATE TABLE applications (
   application_id  INT      NOT NULL AUTO_INCREMENT PRIMARY KEY,
   customer_id     INT      NOT NULL,
+  account_id      INT      NULL,                   -- customer account that owns it
   state_code      CHAR(2)  NOT NULL,
   status          ENUM('in_progress','submitted','under_review',
                        'approved','rejected','escalated','abandoned')
                   NOT NULL DEFAULT 'in_progress',
   current_step    INT      NULL,                   -- step_number they're on
   assigned_staff_id INT    NULL,
-  rejection_reason VARCHAR(255) NULL,
+  rejection_reason VARCHAR(255) NULL,             -- agent's note
+  rejection_code  VARCHAR(30)  NULL,               -- rejection_reasons.code, shown to the customer
+  auto_decision   VARCHAR(20)  NULL,               -- 'approved' / 'escalated' when a rule decided, not a person
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   submitted_at    DATETIME NULL,
   FOREIGN KEY (customer_id)       REFERENCES customers(customer_id),
+  CONSTRAINT fk_applications_account FOREIGN KEY (account_id) REFERENCES customer_accounts(account_id),
   FOREIGN KEY (state_code)        REFERENCES states(state_code),
   FOREIGN KEY (assigned_staff_id) REFERENCES staff_users(staff_id),
   INDEX idx_app_status (status)
@@ -210,6 +239,30 @@ CREATE TABLE application_documents (
   uploaded_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (application_id, doc_type),
   FOREIGN KEY (application_id) REFERENCES applications(application_id) ON DELETE CASCADE
+);
+
+-- Why an application was rejected: agents pick a reason, the customer sees its message.
+-- Filled by 08_client_feedback.sql.
+CREATE TABLE rejection_reasons (
+  code             VARCHAR(30)  NOT NULL PRIMARY KEY,
+  agent_label      VARCHAR(100) NOT NULL,
+  customer_message VARCHAR(500) NOT NULL,
+  sort_order       INT          NOT NULL DEFAULT 0
+);
+
+-- Natural-hazard ratings by ZIP (1 very low ... 5 very high). Intended source:
+-- FEMA National Risk Index. 08_client_feedback.sql loads DEMO values (is_mock).
+CREATE TABLE zip_risk_factors (
+  zip_code      CHAR(5)      NOT NULL PRIMARY KEY,
+  state_code    CHAR(2)      NOT NULL,
+  place_name    VARCHAR(100) NOT NULL,
+  flood_risk    TINYINT      NOT NULL,
+  wind_risk     TINYINT      NOT NULL,
+  hail_risk     TINYINT      NOT NULL,
+  wildfire_risk TINYINT      NOT NULL,
+  is_mock       BOOLEAN      NOT NULL DEFAULT TRUE,
+  source        VARCHAR(255) NULL,
+  FOREIGN KEY (state_code) REFERENCES states(state_code)
 );
 
 -- Audit trail of status changes (approval queue history).
