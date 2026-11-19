@@ -48,8 +48,11 @@ public class TeamController : ControllerBase
                      (SELECT COUNT(*) FROM applications a
                       WHERE a.assigned_staff_id = s.staff_id AND a.status = 'escalated') AS open_escalations,
                      (SELECT COUNT(*) FROM application_status_history h
-                      WHERE h.changed_by = s.staff_id AND h.new_status IN ('approved', 'rejected')
-                        AND h.changed_at >= NOW() - INTERVAL 30 DAY) AS decided_30,
+                      WHERE h.changed_by = s.staff_id AND h.new_status = 'approved'
+                        AND h.changed_at >= NOW() - INTERVAL 30 DAY) AS approved_30,
+                     (SELECT COUNT(*) FROM application_status_history h
+                      WHERE h.changed_by = s.staff_id AND h.new_status = 'rejected'
+                        AND h.changed_at >= NOW() - INTERVAL 30 DAY) AS rejected_30,
                      (SELECT MAX(h.changed_at) FROM application_status_history h WHERE h.changed_by = s.staff_id) AS last_active
               FROM staff_users s
               ORDER BY s.is_active DESC, FIELD(s.role, 'admin', 'specialist', 'employee'), s.last_name, s.first_name", conn);
@@ -69,7 +72,8 @@ public class TeamController : ControllerBase
                     AutoAssign = reader.GetBoolean("auto_assign"),
                     OpenAssigned = Convert.ToInt32(reader["open_assigned"]),
                     OpenEscalations = Convert.ToInt32(reader["open_escalations"]),
-                    Decided30Days = Convert.ToInt32(reader["decided_30"]),
+                    Approved30Days = Convert.ToInt32(reader["approved_30"]),
+                    Rejected30Days = Convert.ToInt32(reader["rejected_30"]),
                     LastActive = reader.IsDBNull(reader.GetOrdinal("last_active")) ? null : reader.GetDateTime("last_active")
                 });
             }

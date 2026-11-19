@@ -87,7 +87,8 @@
                 '<td><span class="team-role team-role-' + esc(s.role) + '">' + esc(ROLE_LABELS[s.role] || s.role) + '</span></td>' +
                 '<td><span class="me-2">' + s.openAssigned + '</span>' + bar + '</td>' +
                 '<td>' + s.openEscalations + '</td>' +
-                '<td>' + s.decided30Days + '</td>' +
+                '<td>' + s.approved30Days + '</td>' +
+                '<td>' + s.rejected30Days + '</td>' +
                 '<td class="small">' + (s.lastActive ? esc(Valent.formatDateTime(s.lastActive)) : '—') + '</td>' +
                 '<td>' + (s.role === 'specialist' || !s.isActive ? toggle : '<span class="text-muted small" title="Automatic assignment only sends escalations to specialists">Manual only</span>') + '</td>' +
                 '</tr>';

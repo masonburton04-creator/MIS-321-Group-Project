@@ -20,7 +20,8 @@ public class TeamMember
     public bool AutoAssign { get; set; }             // may automatic assignment send them new work?
     public int OpenAssigned { get; set; }            // submitted + under review + escalated, assigned to them
     public int OpenEscalations { get; set; }         // ...of those, escalated (what auto-assignment balances)
-    public int Decided30Days { get; set; }           // approvals + rejections in the last 30 days
+    public int Approved30Days { get; set; }          // applications they approved in the last 30 days
+    public int Rejected30Days { get; set; }          // applications they rejected in the last 30 days
     public DateTime? LastActive { get; set; }        // last status change they made
 }
 
